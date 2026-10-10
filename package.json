@@ -1,0 +1,43 @@
+{
+  "name": "noticias-ai-espana",
+  "version": "1.0.0",
+  "description": "Brújula: app móvil instalable de noticias personalizadas de medios españoles",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.js",
+    "check": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alelago-dev/noticias-ai-espana.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/alelago-dev/noticias-ai-espana/issues"
+  },
+  "homepage": "https://github.com/alelago-dev/noticias-ai-espana#readme",
+  "dependencies": {
+    "ai": "^7.0.137",
+    "entities": "^8.1.0",
+    "esbuild": "^0.28.2",
+    "fast-xml-parser": "^5.11.2",
+    "zod": "^4.6.5"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}

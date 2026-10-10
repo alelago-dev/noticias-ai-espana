@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "allowJs": true, "checkJs": false, "noEmit": true, "target": "ES2022", "module": "NodeNext", "moduleResolution": "NodeNext", "skipLibCheck": true },
+  "include": ["server/**/*.js", "public/app.js", "public/sw.js", "worker/**/*.js", "scripts/**/*.mjs"]
+}
