@@ -47,6 +47,32 @@ Consulta el catálogo actual en `https://ai-gateway.vercel.sh/v1/models`. `.env.
 
 La IA usa AI SDK y Vercel AI Gateway. Recibe solo los titulares y extractos seleccionados. Cada párrafo exige referencias a IDs existentes. Si no puede responder con las fuentes, debe abstenerse. La validación de IDs no demuestra la veracidad de todas las afirmaciones: revisa los artículos originales. No hay garantía de «cero alucinaciones».
 
+## Informativo de radio con voz neuronal
+
+«Escuchar ahora» puede locutar un informativo redactado para radio en lugar de leer titulares con la voz del dispositivo. Es opcional y se activa con dos credenciales gratuitas; sin ellas la app sigue funcionando como antes.
+
+```text
+# Voz: Azure Speech (capa gratuita de ~500.000 caracteres al mes; un informativo de 10 minutos usa ~9.000)
+AZURE_SPEECH_KEY=<secreto>
+AZURE_SPEECH_REGION=<región, por ejemplo westeurope>
+
+# Guion: Gemini (capa gratuita). Alternativa: AI_GATEWAY_API_KEY + AI_GATEWAY_MODEL
+GEMINI_API_KEY=<secreto>
+GEMINI_MODEL=<opcional; por defecto gemini-2.5-flash, comprueba el nombre vigente>
+```
+
+Cómo funciona:
+
+1. El servidor selecciona las noticias con el mismo algoritmo de siempre y pide al LLM un párrafo de radio por noticia, solo con titulares y extractos. Cada párrafo debe citar noticias existentes, y cualquier cifra que no aparezca en la fuente hace que esa noticia se lea con su titular y extracto originales.
+2. La apertura (saludo, hora de Madrid y ámbito) y el cierre se escriben en código, no con el modelo.
+3. Cada noticia se convierte en un MP3 (voces `es-ES-ElviraNeural` y `es-ES-AlvaroNeural`, alternadas o fijas según «Voces del informativo»). El navegador lo reproduce con un `<audio>`, con controles de pantalla de bloqueo (Media Session), velocidades y saltos entre noticias.
+4. `POST /api/tts` solo sintetiza texto que el propio servidor ha firmado (HMAC con `AUDIO_SIGNING_SECRET`, o la clave de Azure si no se define), de modo que no sirve como proxy de voz gratuito.
+5. Si la voz neuronal falla, la app continúa con la voz del dispositivo desde la misma noticia.
+
+Duración: Breve ≈ 3 min, Habitual ≈ 6 min, Ampliada ≈ 10 min como objetivo. Los RSS solo traen extractos cortos, así que la edición puede quedar más breve; no se rellena con conocimiento del modelo.
+
+Caché: los guiones y MP3 se guardan en la Cache API del Worker cuando el alojamiento la ofrece y en memoria en caso contrario; no se persisten entre despliegues. Para generar el informativo de madrugada y conservar los MP3 hay que vincular D1/R2 (siguiente fase).
+
 ## Instalar en el móvil
 
 - **Android:** abre la URL HTTPS en Chrome → menú → Instalar aplicación / Añadir a pantalla de inicio.
@@ -83,4 +109,4 @@ https://brujula-noticias-espana.alelago.chatgpt.site (acceso privado con la cuen
 
 ## Estado de esta versión
 
-Intereses, RSS, guardados, boletín extractivo, búsqueda de fuentes y PWA implementados. Síntesis y respuestas con IA preparadas, pendientes de la credencial del proveedor. Voz profesional, MP3, envío matutino/vespertino, cuentas y ampliación a 70–80 medios son pasos posteriores.
+Intereses, RSS, guardados, boletín extractivo, búsqueda de fuentes y PWA implementados. Síntesis y respuestas con IA preparadas, pendientes de la credencial del proveedor. Voz neuronal por noticia y guion de radio con LLM (opcionales, ver arriba). MP3 persistente, envío matutino/vespertino, cuentas y ampliación a 70–80 medios son pasos posteriores.
