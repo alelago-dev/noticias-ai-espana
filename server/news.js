@@ -23,6 +23,7 @@ export const sources = [
   { id: 'lavanguardia', name: 'La Vanguardia', site: 'https://www.lavanguardia.com', hosts: ['lavanguardia.com'], color: '#345b81', feeds: [{ url: 'https://www.lavanguardia.com/rss/home.xml' }] },
   { id: 'elconfidencial', name: 'El Confidencial', site: 'https://www.elconfidencial.com', hosts: ['elconfidencial.com'], color: '#244e74', feeds: [{ url: 'https://rss.elconfidencial.com/espana/', category: 'espana' }] },
   { id: 'elespanol', name: 'EL ESPAÑOL', site: 'https://www.elespanol.com', hosts: ['elespanol.com'], color: '#344659', feeds: [{ url: 'https://www.elespanol.com/rss' }] },
+  { id: 'infobae', name: 'Infobae España', site: 'https://www.infobae.com/espana/', hosts: ['infobae.com'], color: '#e47725', feeds: [{ url: 'https://www.infobae.com/arc/outboundfeeds/rss/category/espana/?outputType=xml' }] },
 ];
 
 const parser = new XMLParser({ ignoreAttributes: false, processEntities: true, removeNSPrefix: true });

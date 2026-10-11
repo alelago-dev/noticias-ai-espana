@@ -52,7 +52,7 @@ test('API rejects cross-origin generation and malformed requests', async () => {
   assert.equal(malformed.status, 400);
   const config = await (await api(new Request('https://brujula.test/api/config'))).json();
   assert.equal(config.categories.length, 13);
-  assert.equal(config.sources.length, 10);
+  assert.equal(config.sources.length, 11);
   assert.ok(config.categories.find(c => c.id === 'tecnologia').topics.some(t => t.id === 'ia'));
   assert.equal(config.aiAvailable, false);
 });
