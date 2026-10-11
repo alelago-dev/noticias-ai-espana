@@ -4,8 +4,11 @@ Una app web instalable para móvil que organiza noticias de medios españoles se
 
 ## Qué puedes hacer
 
-- Elegir entre 12 categorías y asignar cuatro niveles de interés.
-- Consultar noticias recientes de EL PAÍS, ABC, elDiario.es, Europa Press, Xataka y EL MUNDO mediante sus RSS públicos.
+- Elegir entre 13 categorías, asignar cuatro niveles de interés y seleccionar hasta cinco subtemas por categoría (89 subtemas disponibles).
+- Consultar noticias recientes de EL PAÍS, ABC, elDiario.es, Europa Press, Xataka, EL MUNDO, 20minutos, La Vanguardia, El Confidencial y EL ESPAÑOL mediante 15 RSS generales y temáticos.
+- Priorizar una comunidad autónoma o municipio, añadir hasta diez intereses propios y elegir los medios incluidos.
+- Usar una ventana de 6, 12, 24 o 48 horas, con 24 horas por defecto.
+- Activar «solo mis subtemas» para excluir otros subtemas dentro de las categorías afinadas.
 - Buscar titulares, filtrar por tema, ordenar por fecha y guardar noticias en tu dispositivo.
 - Preparar una edición breve, habitual o ampliada con referencias a cada fuente.
 - Escuchar la edición con la síntesis de voz del navegador, pausar, cambiar de velocidad y avanzar entre noticias.
@@ -48,11 +51,12 @@ La app requiere internet para cargar noticias. El service worker conserva la int
 ## Fuentes y privacidad
 
 - Solo canales RSS públicos. No se sortean paywalls ni se descargan artículos completos.
-- El feed muestra publicaciones fechadas dentro de las últimas 72 horas; descarta fechas desconocidas, futuras y enlaces fuera del dominio de la fuente.
-- Las categorías se asignan con reglas de palabras clave; pueden equivocarse.
-- El boletín busca variedad de medios y limita las noticias de una sola fuente. No afirma haber contrastado de forma independiente todos los acontecimientos.
+- La recogida conserva publicaciones de hasta 48 horas. La selección muestra las últimas 24 horas por defecto (configurable a 6, 12 o 48); descarta fechas desconocidas, futuras y enlaces fuera del dominio de la fuente.
+- Las categorías y subtemas se asignan con coincidencias de palabras completas y expresiones de títulos, etiquetas y extractos. Las noticias pueden pertenecer a varias categorías; la clasificación puede equivocarse. La ubicación prioriza menciones del lugar en el texto, no identifica el lugar exacto de un acontecimiento.
+- Feed y boletín comparten el mismo algoritmo de intereses, subtemas, localidad, temas propios y exclusión de medios. La actualidad separa las noticias de hasta 12 horas, 12–24 horas y 24–48 horas para evitar que una noticia antigua adelante a una nueva solo por afinidad. Dentro de cada grupo, el orden combina afinidad, edad y variedad de medios. El boletín limita las noticias de una sola fuente. No afirma haber contrastado de forma independiente todos los acontecimientos.
+- Los canales se comprueban con una caché de dos minutos. La app abierta y visible consulta novedades cada dos minutos y al volver del segundo plano; «Actualizar» fuerza la comprobación salvo una protección de 30 segundos entre consultas. No se garantiza publicación continua de todos los medios. Se muestra la fecha de su última publicación por separado de la hora de comprobación.
 - La duración es una estimación del texto disponible. No se amplía el contenido para aparentar 10 minutos.
-- Intereses y guardados se almacenan en el navegador. No hay cuenta ni sincronización entre dispositivos. Las consultas se envían al servidor y, cuando se activa la IA, al proveedor.
+- Intereses, subtemas, zona y guardados se almacenan en el navegador. No hay cuenta ni sincronización entre dispositivos. Las consultas se envían al servidor y, cuando se activa la IA, al proveedor.
 - Antes de una explotación comercial, revisa los términos de reutilización de cada medio y negocia las licencias necesarias. Identificar un medio no implica un acuerdo con él.
 
 ## Comprobar y publicar
@@ -66,6 +70,10 @@ npm run build
 La compilación produce un Worker ESM en `dist/server/index.js` con los recursos de la interfaz incorporados. `.openai/hosting.json` identifica el Site privado. No cambies su ID para actualizarlo.
 
 Para otras plataformas Node, ejecuta `npm start` detrás de HTTPS y configura las dos variables de IA en su administrador de secretos. Para una app en App Store o Google Play, habrá que preparar un contenedor nativo, reproducción de audio persistente y las cuentas de desarrollador correspondientes.
+
+## Probar la app
+
+https://brujula-noticias-espana.alelago.chatgpt.site (acceso privado con la cuenta propietaria).
 
 ## Estado de esta versión
 

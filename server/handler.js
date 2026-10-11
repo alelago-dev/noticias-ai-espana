@@ -1,4 +1,4 @@
-import { categories, sources, getNews, personalize, normalizePreferences, findEvidence } from './news.js';
+import { categories, regions, sources, getNews, personalize, findEvidence } from './news.js';
 import { synthesize } from './ai.js';
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
@@ -22,9 +22,9 @@ async function body(request) {
 
 export async function api(request, env = {}) {
   const path = new URL(request.url).pathname;
-  if (path === '/api/config' && request.method === 'GET') return json({ categories, sources: sources.map(({ id, name, color }) => ({ id, name, color })), aiAvailable: Boolean(env.AI_GATEWAY_API_KEY && env.AI_GATEWAY_MODEL) });
+  if (path === '/api/config' && request.method === 'GET') return json({ categories: categories.map(c => ({ ...c, topics: c.topics.map(({ id, name }) => ({ id, name })) })), regions: regions.map(({ id, name }) => ({ id, name })), sources: sources.map(({ id, name, color, site }) => ({ id, name, color, site })), aiAvailable: Boolean(env.AI_GATEWAY_API_KEY && env.AI_GATEWAY_MODEL) });
   if (path === '/api/news' && request.method === 'GET') {
-    const news = await getNews();
+    const news = await getNews(fetch, { force: new URL(request.url).searchParams.get('refresh') === '1' });
     return json(news, news.articles.length ? 200 : 503);
   }
   if (path === '/api/edition' || path === '/api/ask') {
@@ -39,14 +39,12 @@ export async function api(request, env = {}) {
     let articles;
     if (path === '/api/ask') {
       if (typeof input.question !== 'string' || input.question.trim().length < 3 || input.question.length > 500) return json({ error: 'Escribe una pregunta de entre 3 y 500 caracteres.' }, 400);
-      articles = findEvidence(input.question, news.articles);
+      const cutoff = Date.now() - 24 * 3600000;
+      articles = findEvidence(input.question, news.articles.filter(a => +new Date(a.publishedAt) >= cutoff));
       if (!articles.length) return json({ mode: 'insufficient', paragraphs: [], articles: [], message: 'No encuentro fuentes suficientes en las noticias recientes para responder. Prueba con otro tema o consulta los medios originales.' });
     } else {
       const count = input.length === 'long' ? 20 : input.length === 'short' ? 6 : 12;
-      articles = personalize(news.articles, normalizePreferences(input.preferences), news.articles.length);
-      // Limit one source to keep room for other editorial perspectives.
-      const perSource = new Map();
-      articles = articles.filter(a => { const n = (perSource.get(a.source) || 0) + 1; perSource.set(a.source, n); return n <= 4; }).slice(0, count);
+      articles = personalize(news.articles, input.preferences, count, input.profile, { maxPerSource: 4 });
       if (!articles.length) return json({ error: 'No hay noticias recientes de tus temas. Amplía tus intereses.' }, 422);
     }
     const result = await synthesize(articles, env, input.question);

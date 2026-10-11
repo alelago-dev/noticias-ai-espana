@@ -1,9 +1,12 @@
+import { personalize, normalizeProfile, normalizeText } from './personalization.js';
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
-const defaults = { espana: 2, politica: 2, economia: 2, tecnologia: 3, internacional: 1, deportes: 0, ciencia: 1, cultura: 0, salud: 0, medioambiente: 0, sociedad: 0, educacion: 0 };
+const defaults = { espana: 2, politica: 2, economia: 2, tecnologia: 3, internacional: 1, deportes: 0, ciencia: 1, cultura: 0, musica: 0, salud: 0, medioambiente: 0, sociedad: 0, educacion: 0 };
 function stored(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } }
 function saveLocal(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { toast('No se pudo guardar en este navegador. Comprueba el espacio disponible.'); } }
 let preferences = stored('brujula-interests', { ...defaults });
+let profile = normalizeProfile(stored('brujula-profile', {}));
+let draftPreferences = { ...preferences }, draftProfile = normalizeProfile(profile);
 let saved = stored('brujula-saved', []);
 if (!preferences || typeof preferences !== 'object' || Array.isArray(preferences)) preferences = { ...defaults };
 if (!Array.isArray(saved)) saved = [];
@@ -38,40 +41,111 @@ function navigate(next, updateHash = true) {
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 document.addEventListener('click', e => { const button = e.target.closest('[data-view]'); if (button) navigate(button.dataset.view); });
+document.addEventListener('click', e => { const b = e.target.closest('[data-profile-jump]'); if (b) document.getElementById(b.dataset.profileJump)?.scrollIntoView({ block: 'start', behavior: 'smooth' }); });
 window.addEventListener('hashchange', () => navigate(location.hash.slice(1), false));
 $('#today').textContent = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Madrid' }).format(new Date());
 
 function card(a) {
   const c = category(a.category), isSaved = saved.some(s => s.id === a.id);
-  return `<article class="news-card"><div class="card-graphic cat-${esc(a.category)}"><span>${esc(c.name)}</span><span class="category-icon" aria-hidden="true">${esc(c.icon)}</span></div><div class="card-body"><div class="card-source"><span class="source-logo">${esc(a.sourceName)}</span><span class="source-dot"></span><time datetime="${esc(a.publishedAt)}">${esc(age(a.publishedAt))}</time></div><h3><a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">${esc(a.title)}</a></h3>${a.excerpt ? `<p>${esc(a.excerpt)}</p>` : ''}</div><div class="card-footer"><a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">Leer en ${esc(a.sourceName)} ↗</a><button class="save-button ${isSaved ? 'saved' : ''}" data-save="${esc(a.id)}" aria-label="${isSaved ? 'Quitar de guardadas' : 'Guardar noticia'}" aria-pressed="${isSaved}">${isSaved ? '▣' : '▱'}</button></div></article>`;
+  return `<article class="news-card"><div class="card-graphic cat-${esc(a.category)}"><span>${esc(c.name)}</span><span class="category-icon" aria-hidden="true">${esc(c.icon)}</span></div><div class="card-body"><div class="card-source"><span class="source-logo">${esc(a.sourceName)}</span><span class="source-dot"></span><time datetime="${esc(a.publishedAt)}">${esc(age(a.publishedAt))}</time></div><h3><a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">${esc(a.title)}</a></h3>${a.excerpt ? `<p>${esc(a.excerpt)}</p>` : ''}${a.matchReasons?.length ? `<div class="match-reasons"><span>PARA TI</span> ${a.matchReasons.slice(0, 2).map(esc).join(' · ')}</div>` : ''}</div><div class="card-footer"><a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">Leer en ${esc(a.sourceName)} ↗</a><button class="save-button ${isSaved ? 'saved' : ''}" data-save="${esc(a.id)}" aria-label="${isSaved ? 'Quitar de guardadas' : 'Guardar noticia'}" aria-pressed="${isSaved}">${isSaved ? '▣' : '▱'}</button></div></article>`;
 }
 function empty(title, text, action = '') { return `<div class="empty-state"><span aria-hidden="true">✳</span><h2>${esc(title)}</h2><p>${esc(text)}</p>${action}</div>`; }
 function selectedArticles() {
-  let items = news.articles.filter(a => Number(preferences[a.category]) > 0 && (filter === 'all' || a.category === filter));
-  const query = $('#search').value.trim().toLowerCase();
-  if (query) items = items.filter(a => (a.title + ' ' + a.excerpt + ' ' + a.sourceName).toLowerCase().includes(query));
-  items.sort((a, b) => ($('#sort').value === 'recent' ? 0 : preferences[b.category] - preferences[a.category]) || +new Date(b.publishedAt) - +new Date(a.publishedAt));
-  return items;
+  const items = news.articles.filter(a => filter === 'all' || a.category === filter || a.categories?.includes(filter));
+  const query = normalizeText($('#search').value);
+  const matching = query ? items.filter(a => normalizeText(a.title + ' ' + a.excerpt + ' ' + a.sourceName).includes(query)) : items;
+  return personalize(matching, preferences, matching.length, profile, { sort: $('#sort').value });
 }
 function renderFeed() {
   const items = selectedArticles();
   $('#feed').innerHTML = loadError ? `<div class="empty-state error-state"><span>↻</span><h2>No podemos conectar con las noticias</h2><p>${esc(loadError)}</p><button class="outline-button" id="retry-news">Intentar de nuevo</button></div>` : items.length ? items.slice(0, displayLimit).map(card).join('') : empty('Tu radar está en calma.', news.articles.length ? 'No hay noticias que coincidan. Prueba otro filtro o amplía tus intereses.' : 'No hay publicaciones recientes disponibles de los medios.', '<button class="outline-button" data-view="preferences">Elegir mis intereses ↗</button>');
   $('#retry-news')?.addEventListener('click', loadNews);
   $('#load-more').hidden = items.length <= displayLimit || !!loadError;
-  const available = news.sources.filter(s => s.available).length;
-  $('#news-meta').textContent = news.updatedAt ? items.length + ' noticias · ' + available + ' medios conectados · Actualizado ' + new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(news.updatedAt)) : 'Actualidad de medios españoles';
+  const available = news.sources.filter(s => s.fresh).length;
+  $('#news-meta').textContent = news.updatedAt ? items.length + ' noticias en ' + profile.hours + ' h · ' + available + ' medios con actualidad · Comprobado ' + new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(news.updatedAt)) : 'Actualidad de medios españoles';
+  const regionName = config.regions?.find(r => r.id === profile.region)?.name;
+  $('#freshness-note').textContent = 'Últimas ' + profile.hours + ' horas' + (profile.topicMode === 'strict' ? ' · Solo tus subtemas' : ' · Tus subtemas tienen prioridad') + (profile.city || regionName ? ' · Cerca de ' + (profile.city || regionName) : '');
 }
 function renderInterests() {
   const selected = config.categories.filter(c => preferences[c.id] > 0);
-  $('#interest-tags').innerHTML = selected.slice(0, 5).map(c => `<span class="interest-tag">${esc(c.name)}</span>`).join('') + (selected.length > 5 ? `<span class="interest-tag">+${selected.length - 5}</span>` : '') || '<span class="interest-tag">Elige tu primer tema</span>';
+  const labels = selected.flatMap(c => profile.topics[c.id].map(id => c.topics.find(t => t.id === id)?.name).filter(Boolean));
+  const tags = labels.length ? labels : selected.map(c => c.name);
+  $('#interest-tags').innerHTML = tags.slice(0, 5).map(name => `<span class="interest-tag">${esc(name)}</span>`).join('') + (tags.length > 5 ? `<span class="interest-tag">+${tags.length - 5}</span>` : '') || '<span class="interest-tag">Elige tu primer tema</span>';
   $('#filters').innerHTML = `<button data-filter="all" class="${filter === 'all' ? 'active' : ''}" aria-pressed="${filter === 'all'}">Para ti</button>` + selected.map(c => `<button data-filter="${c.id}" class="${filter === c.id ? 'active' : ''}" aria-pressed="${filter === c.id}">${esc(c.name)}</button>`).join('');
-  $('#preferences-grid').innerHTML = config.categories.map(c => `<div class="preference-card"><div class="preference-title"><span aria-hidden="true">${esc(c.icon)}</span>${esc(c.name)}</div><div class="levels" role="group" aria-label="Interés en ${esc(c.name)}">${['No seguir', 'Algo', 'Bastante', 'Mucho'].map((label, n) => `<button data-interest="${c.id}" data-level="${n}" class="${preferences[c.id] === n ? 'active' : ''}" aria-pressed="${preferences[c.id] === n}">${label}</button>`).join('')}</div></div>`).join('');
 }
-function updateInterests() { saveLocal('brujula-interests', preferences); if (!preferences[filter]) filter = 'all'; displayLimit = 9; renderInterests(); renderFeed(); }
+function renderDraftCards() {
+  $('#preferences-grid').innerHTML = config.categories.map(c => {
+    const topics = draftProfile.topics[c.id];
+    return `<section class="preference-card ${draftPreferences[c.id] === 0 ? 'unfollowed' : ''}"><div class="preference-title"><span aria-hidden="true">${esc(c.icon)}</span>${esc(c.name)}<small>${topics.length ? topics.length + ' de 5' : 'Todos los subtemas'}</small></div><div class="levels" role="group" aria-label="Interés en ${esc(c.name)}">${['No seguir', 'Algo', 'Bastante', 'Mucho'].map((label, n) => `<button data-interest="${c.id}" data-level="${n}" class="${draftPreferences[c.id] === n ? 'active' : ''}" aria-pressed="${draftPreferences[c.id] === n}">${label}</button>`).join('')}</div><div class="topic-chips" role="group" aria-label="Subtemas de ${esc(c.name)}">${c.topics.map(t => `<button data-topic="${t.id}" data-category="${c.id}" class="topic-chip ${topics.includes(t.id) ? 'selected' : ''}" aria-pressed="${topics.includes(t.id)}">${topics.includes(t.id) ? '<span aria-hidden="true">✓</span> ' : ''}${esc(t.name)}</button>`).join('')}</div></section>`;
+  }).join('');
+  updateSaveStatus();
+}
+function renderProfileControls() {
+  $('#profile-region').innerHTML = '<option value="">Toda España</option>' + config.regions.map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join('');
+  $('#profile-region').value = draftProfile.region;
+  $('#profile-city').value = draftProfile.city;
+  $('#profile-hours').value = draftProfile.hours;
+  $('#profile-strict').checked = draftProfile.topicMode === 'strict';
+  renderKeywords(); renderProfileSources(); renderDraftCards();
+}
+function renderProfileSources() {
+  $('#profile-sources').innerHTML = config.sources.map(s => `<button data-source-toggle="${s.id}" class="topic-chip ${draftProfile.excludedSources.includes(s.id) ? '' : 'selected'}" aria-pressed="${!draftProfile.excludedSources.includes(s.id)}">${draftProfile.excludedSources.includes(s.id) ? '' : '<span aria-hidden="true">✓</span> '}${esc(s.name)}</button>`).join('');
+}
+function renderKeywords() {
+  $('#keyword-tags').innerHTML = draftProfile.keywords.map((k, i) => `<button class="topic-chip selected" data-remove-keyword="${i}" aria-label="Quitar interés ${esc(k)}">${esc(k)} <span aria-hidden="true">×</span></button>`).join('');
+}
+function updateSaveStatus() {
+  const dirty = JSON.stringify(draftPreferences) !== JSON.stringify(preferences) || JSON.stringify(draftProfile) !== JSON.stringify(profile);
+  const cats = config.categories.filter(c => draftPreferences[c.id] > 0);
+  const count = cats.reduce((n, c) => n + draftProfile.topics[c.id].length, 0);
+  $('#profile-summary').textContent = cats.length + ' categorías · ' + count + ' subtemas elegidos';
+  $('#save-status').textContent = dirty ? 'Cambios sin guardar' : 'Tu selección está guardada en este dispositivo';
+  $('#save-preferences').disabled = !dirty;
+}
 $('#filters').addEventListener('click', e => { const b = e.target.closest('[data-filter]'); if (!b) return; filter = b.dataset.filter; displayLimit = 9; renderInterests(); renderFeed(); });
-$('#preferences-grid').addEventListener('click', e => { const b = e.target.closest('[data-interest]'); if (!b) return; preferences[b.dataset.interest] = Number(b.dataset.level); updateInterests(); });
-$('#select-all').onclick = () => { preferences = Object.fromEntries(config.categories.map(c => [c.id, 2])); updateInterests(); toast('Ahora sigues los doce temas.'); };
-$('#reset-interests').onclick = () => { preferences = { ...defaults }; updateInterests(); toast('Selección inicial restablecida.'); };
+$('#preferences-grid').addEventListener('click', e => {
+  const level = e.target.closest('[data-interest]'), t = e.target.closest('[data-topic]');
+  if (level) draftPreferences[level.dataset.interest] = Number(level.dataset.level);
+  else if (t) {
+    const id = t.dataset.category, selected = draftProfile.topics[id];
+    if (selected.includes(t.dataset.topic)) draftProfile.topics[id] = selected.filter(x => x !== t.dataset.topic);
+    else {
+      if (selected.length >= 5) { toast('Elige hasta cinco subtemas por categoría. Quita uno para añadir otro.'); return; }
+      selected.push(t.dataset.topic);
+      if (!draftPreferences[id]) draftPreferences[id] = 2;
+    }
+  } else return;
+  renderDraftCards();
+  if (t) $(`[data-category="${t.dataset.category}"][data-topic="${t.dataset.topic}"]`)?.focus({ preventScroll: true });
+  if (level) $(`[data-interest="${level.dataset.interest}"][data-level="${level.dataset.level}"]`)?.focus({ preventScroll: true });
+});
+$('#select-all').onclick = () => { draftPreferences = Object.fromEntries(config.categories.map(c => [c.id, 2])); renderDraftCards(); };
+$('#reset-interests').onclick = () => { draftPreferences = { ...defaults }; draftProfile = normalizeProfile({}); renderProfileControls(); toast('Selección inicial preparada. Pulsa Guardar cambios para aplicarla.'); };
+$('#profile-region').onchange = e => { draftProfile.region = e.target.value; updateSaveStatus(); };
+$('#profile-city').oninput = e => { draftProfile.city = e.target.value.trim(); updateSaveStatus(); };
+$('#profile-hours').onchange = e => { draftProfile.hours = Number(e.target.value); updateSaveStatus(); };
+$('#profile-strict').onchange = e => { draftProfile.topicMode = e.target.checked ? 'strict' : 'priority'; updateSaveStatus(); };
+$('#keyword-form').onsubmit = e => {
+  e.preventDefault(); const entry = $('#keyword-entry'), text = entry.value.trim();
+  if (normalizeText(text).length < 3) { toast('Escribe al menos tres letras para tu interés.'); return; }
+  if (draftProfile.keywords.some(k => normalizeText(k) === normalizeText(text))) { toast('Ese interés ya está añadido.'); return; }
+  if (draftProfile.keywords.length >= 10) { toast('Puedes añadir hasta diez intereses propios.'); return; }
+  draftProfile.keywords.push(text.slice(0, 50)); entry.value = ''; renderKeywords(); updateSaveStatus();
+};
+$('#keyword-tags').onclick = e => { const b = e.target.closest('[data-remove-keyword]'); if (!b) return; draftProfile.keywords.splice(Number(b.dataset.removeKeyword), 1); renderKeywords(); updateSaveStatus(); };
+$('#profile-sources').onclick = e => {
+  const b = e.target.closest('[data-source-toggle]'); if (!b) return; const id = b.dataset.sourceToggle;
+  draftProfile.excludedSources = draftProfile.excludedSources.includes(id) ? draftProfile.excludedSources.filter(x => x !== id) : [...draftProfile.excludedSources, id];
+  renderProfileSources(); updateSaveStatus();
+};
+$('#save-preferences').onclick = () => {
+  preferences = { ...draftPreferences }; profile = normalizeProfile(draftProfile);
+  saveLocal('brujula-interests', preferences); saveLocal('brujula-profile', profile);
+  draftProfile = normalizeProfile(profile);
+  filter = 'all'; displayLimit = 9; edition = null; closeSpeech();
+  $('#edition-content').innerHTML = empty('Tu selección ha cambiado.', 'Prepara una nueva edición con tus intereses actualizados.');
+  renderInterests(); renderFeed(); updateSaveStatus(); toast('Tus temas ya marcan el rumbo del feed y del informativo.'); navigate('home');
+};
 $('#search').addEventListener('input', () => { displayLimit = 9; renderFeed(); });
 $('#sort').onchange = renderFeed;
 $('#load-more').onclick = () => { displayLimit += 9; renderFeed(); };
@@ -85,17 +159,23 @@ document.addEventListener('click', e => {
   saveLocal('brujula-saved', saved); renderSaved(); renderFeed();
 });
 function renderSources() {
-  const domains = { elpais: 'elpais.com', abc: 'abc.es', eldiario: 'eldiario.es', europapress: 'europapress.es', xataka: 'xataka.com', elmundo: 'elmundo.es' };
-  $('#sources-grid').innerHTML = config.sources.map(s => { const status = news.sources.find(x => x.id === s.id); return `<article class="source-card"><h2>${esc(s.name)}</h2><div class="source-state ${status && !status.available ? 'unavailable' : ''}"><i></i>${status ? status.available ? 'Canal RSS disponible' : 'Canal no disponible ahora' : 'Pendiente de conexión'}</div><small>${status?.count ?? '—'} publicaciones recientes</small><a href="https://${domains[s.id]}" target="_blank" rel="noopener noreferrer">Visitar el medio original ↗</a></article>`; }).join('');
+  $('#sources-grid').innerHTML = config.sources.map(s => {
+    const status = news.sources.find(x => x.id === s.id);
+    const state = !status ? 'Pendiente de conexión' : !status.available ? 'Canal no disponible ahora' : status.fresh ? 'Noticias de las últimas 24 horas' : 'Sin publicaciones en las últimas 24 h';
+    return `<article class="source-card"><h2>${esc(s.name)}</h2><div class="source-state ${status && !status.fresh ? 'unavailable' : ''}"><i></i>${state}</div><small>${status?.recentCount ?? '—'} noticias en 24 h · ${status?.activeFeeds ?? '—'} canales disponibles</small><small>Última publicación: ${status?.latestPublishedAt ? esc(age(status.latestPublishedAt)) : 'sin noticias recientes'}</small><small>Comprobado: ${status?.checkedAt ? esc(new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(status.checkedAt))) : 'pendiente'}</small><a href="${esc(safeURL(s.site))}" target="_blank" rel="noopener noreferrer">Visitar el medio original ↗</a></article>`;
+  }).join('');
 }
-async function loadNews() {
+async function loadNews(force = false) {
+  if ($('#refresh').disabled) return;
   $('#refresh').disabled = true;
   if (!news.articles.length) $('#feed').innerHTML = '<div class="skeleton"></div>'.repeat(3);
-  try { news = await request('/api/news'); loadError = null; }
+  try { news = await request('/api/news' + (force === true ? '?refresh=1' : '')); loadError = null; }
   catch (error) { loadError = error.message; }
   renderFeed(); renderSources(); $('#refresh').disabled = false;
 }
-$('#refresh').onclick = loadNews;
+$('#refresh').onclick = () => loadNews(true);
+setInterval(() => { if (document.visibilityState === 'visible') loadNews(); }, 120000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && (!news.updatedAt || Date.now() - +new Date(news.updatedAt) >= 120000)) loadNews(); });
 
 function citations(paragraph, articles) {
   return `<div class="citations">${paragraph.sourceIds.map(id => articles.find(a => a.id === id)).filter(Boolean).map(a => `<a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer" title="${esc(a.title)}">${esc(a.sourceName)} · ${esc(a.title.slice(0, 65))}${a.title.length > 65 ? '…' : ''} ↗</a>`).join('')}</div>`;
@@ -113,7 +193,7 @@ async function createEdition() {
   navigate('edition'); editionBusy = true; $('#regenerate').disabled = true;
   $('#edition-content').innerHTML = empty('Preparando tu edición…', 'Seleccionamos las noticias de tus temas y conservamos sus fuentes.');
   closeSpeech();
-  try { edition = await request('/api/edition', { preferences, length: $('#edition-length').value }); renderEdition(); }
+  try { edition = await request('/api/edition', { preferences, profile, length: $('#edition-length').value }); renderEdition(); }
   catch (error) { $('#edition-content').innerHTML = `<div class="empty-state error-state"><span>✳</span><h2>No hemos podido preparar la edición.</h2><p>${esc(error.message)}</p><button class="outline-button" data-view="preferences">Revisar mis intereses ↗</button></div>`; }
   finally { editionBusy = false; $('#regenerate').disabled = false; }
 }
@@ -182,7 +262,8 @@ async function init() {
   try {
     config = await request('/api/config');
     preferences = Object.fromEntries(config.categories.map(c => [c.id, Number.isInteger(preferences[c.id]) && preferences[c.id] >= 0 && preferences[c.id] <= 3 ? preferences[c.id] : defaults[c.id]]));
-    renderInterests(); renderSources();
+    draftPreferences = { ...preferences }; draftProfile = normalizeProfile(profile);
+    renderInterests(); renderProfileControls(); renderSources();
     $('#ai-status').textContent = config.aiAvailable ? 'Respuestas con IA basadas en extractos RSS. Comprueba siempre las fuentes.' : 'Modo fuentes activo. La respuesta redactada con IA está pendiente de activación.';
     await loadNews();
   } catch { loadError = 'No se puede conectar con Brújula. Comprueba tu conexión y vuelve a cargar la página.'; renderFeed(); $('#ai-status').textContent = 'Sin conexión. Vuelve a intentarlo cuando recuperes el acceso a internet.'; }

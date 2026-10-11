@@ -12,7 +12,8 @@ test('RSS: dates, original links, attribution and clean excerpts', () => {
   const items = parseFeed(rss(new Date(now - 3600000).toUTCString()), sources[0], now);
   assert.equal(items.length, 1);
   assert.equal(items[0].sourceName, 'EL PAÍS');
-  assert.equal(items[0].category, 'economia');
+  assert.ok(items[0].categories.includes('economia'));
+  assert.ok(items[0].topics.includes('economia:vivienda'));
   assert.equal(items[0].excerpt, 'El ministro presenta una propuesta.');
   assert.equal(parseFeed(rss('no date'), sources[0], now).length, 0);
   assert.equal(parseFeed(rss(new Date(now - 96 * 3600000).toUTCString()), sources[0], now).length, 0);
@@ -24,8 +25,8 @@ test('RSS rejects external links, spoofed domains and non-HTTPS', () => {
   assert.equal(cleanText('<script>alert(1)</script><b>Una noticia</b>'), 'Una noticia');
 });
 test('Interests select and rank articles, excluded categories stay out', () => {
-  const articles = [{ id: 'a', category: 'economia', publishedAt: '2026-10-10T10:00:00Z' }, { id: 'b', category: 'tecnologia', publishedAt: '2026-10-09T10:00:00Z' }, { id: 'c', category: 'deportes', publishedAt: '2026-10-10T10:00:00Z' }];
-  assert.deepEqual(personalize(articles, { economia: 1, tecnologia: 3 }).map(a => a.id), ['b', 'a']);
+  const articles = [{ id: 'a', category: 'economia', publishedAt: '2026-10-10T09:30:00Z' }, { id: 'b', category: 'tecnologia', publishedAt: '2026-10-10T09:00:00Z' }, { id: 'c', category: 'deportes', publishedAt: '2026-10-10T10:00:00Z' }];
+  assert.deepEqual(personalize(articles, { economia: 1, tecnologia: 3 }, 30, {}, { now }).map(a => a.id), ['b', 'a']);
   assert.equal(normalizePreferences({ economia: 99, tecnologia: '3' }).economia, 0);
   assert.equal(normalizePreferences(null).economia, 0);
   assert.equal(personalize(articles, {}).length, 0);
@@ -50,7 +51,8 @@ test('API rejects cross-origin generation and malformed requests', async () => {
   const malformed = await api(new Request('https://brujula.test/api/ask', { method: 'POST', body: 'not json' }));
   assert.equal(malformed.status, 400);
   const config = await (await api(new Request('https://brujula.test/api/config'))).json();
-  assert.equal(config.categories.length, 12);
-  assert.equal(config.sources.length, 6);
+  assert.equal(config.categories.length, 13);
+  assert.equal(config.sources.length, 10);
+  assert.ok(config.categories.find(c => c.id === 'tecnologia').topics.some(t => t.id === 'ia'));
   assert.equal(config.aiAvailable, false);
 });
