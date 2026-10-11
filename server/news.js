@@ -11,7 +11,7 @@ export const sources = [
     { url: 'https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/section/cultura/portada', category: 'cultura' },
   ] },
   { id: 'abc', name: 'ABC', site: 'https://www.abc.es', hosts: ['abc.es'], color: '#6e4747', feeds: [{ url: 'https://www.abc.es/rss/feeds/abc_ultima.xml' }] },
-  { id: 'eldiario', name: 'elDiario.es', site: 'https://www.eldiario.es', hosts: ['eldiario.es'], color: '#174871', feeds: [{ url: 'https://www.eldiario.es/rss/' }, { url: 'https://www.eldiario.es/rss/cultura/', category: 'cultura' }] },
+  { id: 'eldiario', name: 'elDiario.es', site: 'https://www.eldiario.es', hosts: ['eldiario.es'], color: '#174871', feeds: [{ url: 'https://www.eldiario.es/rss/' }, { url: 'https://www.eldiario.es/rss/cultura/', category: 'cultura' }, { url: 'https://www.eldiario.es/rss/catalunya', region: 'cataluna' }] },
   { id: 'europapress', name: 'Europa Press', site: 'https://www.europapress.es', hosts: ['europapress.es'], color: '#40519c', feeds: [
     { url: 'https://www.europapress.es/rss/rss.aspx' },
     { url: 'https://www.europapress.es/rss/rss.aspx?ch=00066', category: 'deportes' },
@@ -19,8 +19,9 @@ export const sources = [
   ] },
   { id: 'xataka', name: 'Xataka', site: 'https://www.xataka.com', hosts: ['xataka.com'], color: '#486500', feeds: [{ url: 'https://www.xataka.com/index.xml', category: 'tecnologia' }] },
   { id: 'elmundo', name: 'EL MUNDO', site: 'https://www.elmundo.es', hosts: ['elmundo.es'], color: '#394a4d', feeds: [{ url: 'https://e00-elmundo.uecdn.es/elmundo/rss/portada.xml' }] },
-  { id: '20minutos', name: '20minutos', site: 'https://www.20minutos.es', hosts: ['20minutos.es'], color: '#3768ae', feeds: [{ url: 'https://www.20minutos.es/rss/' }] },
-  { id: 'lavanguardia', name: 'La Vanguardia', site: 'https://www.lavanguardia.com', hosts: ['lavanguardia.com'], color: '#345b81', feeds: [{ url: 'https://www.lavanguardia.com/rss/home.xml' }] },
+  { id: '20minutos', name: '20minutos', site: 'https://www.20minutos.es', hosts: ['20minutos.es'], color: '#3768ae', feeds: [{ url: 'https://www.20minutos.es/rss/' }, { url: 'https://www.20minutos.es/rss/cataluna/barcelona/', region: 'cataluna' }] },
+  { id: 'lavanguardia', name: 'La Vanguardia', site: 'https://www.lavanguardia.com', hosts: ['lavanguardia.com'], color: '#345b81', feeds: [{ url: 'https://www.lavanguardia.com/rss/home.xml' }, { url: 'https://www.lavanguardia.com/rss/local/barcelona.xml', region: 'cataluna' }] },
+  { id: 'elperiodico', name: 'El Periódico', site: 'https://www.elperiodico.com', hosts: ['elperiodico.com'], color: '#b52d3a', feeds: [{ url: 'https://www.elperiodico.com/es/rss/rss_portada.xml' }, { url: 'https://www.elperiodico.com/es/rss/barcelona/rss.xml', region: 'cataluna' }] },
   { id: 'elconfidencial', name: 'El Confidencial', site: 'https://www.elconfidencial.com', hosts: ['elconfidencial.com'], color: '#244e74', feeds: [{ url: 'https://rss.elconfidencial.com/espana/', category: 'espana' }] },
   { id: 'elespanol', name: 'EL ESPAÑOL', site: 'https://www.elespanol.com', hosts: ['elespanol.com'], color: '#344659', feeds: [{ url: 'https://www.elespanol.com/rss' }] },
   { id: 'infobae', name: 'Infobae España', site: 'https://www.infobae.com/espana/', hosts: ['infobae.com'], color: '#e47725', feeds: [{ url: 'https://www.infobae.com/arc/outboundfeeds/rss/category/espana/' }] },
@@ -62,7 +63,9 @@ export function parseFeed(xml, source, now = Date.now()) {
     
     let hash = 2166136261;
     for (const c of url) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619);
-    const article = annotateArticle({ id: source.id + '-' + (hash >>> 0).toString(36), title, excerpt, url, publishedAt: published.toISOString(), source: source.id, sourceName: source.name, feedPosition, generalFeed: !source.category }, tags, source.category || 'espana');
+    const article = annotateArticle({ id: source.id + '-' + (hash >>> 0).toString(36), title, excerpt, url, publishedAt: published.toISOString(), source: source.id, sourceName: source.name, feedPosition, generalFeed: !source.category && !source.region }, tags, source.category || 'espana');
+    // Regional RSS sections supply location even when the headline omits it.
+    if (regions.some(r => r.id === source.region) && !article.regions.includes(source.region)) article.regions.push(source.region);
     const internationalSection = /\/(internacional|international|mundo|world)(\/|-)/i.test(new URL(url).pathname) || /\b(internacional|mundo|international|world)\b/.test(normalizeText(tags));
     const domesticSection = /\/(espana|politica|nacional|andalucia|madrid|catalunya|cataluna|comunidad-valenciana)(\/|-)/i.test(new URL(url).pathname);
     const foreign = /\b(ucrania|rusia|israel|gaza|libano|iran|china|estados unidos|trump|zelenski|putin|netanyahu|francia|alemania|reino unido|portugal|argentina|brasil|mexico|venezuela)\b/.test(normalizeText(title));
@@ -89,7 +92,7 @@ export async function getNews(fetcher = fetch, { force = false } = {}) {
           if (!r.ok) throw new Error('RSS HTTP ' + r.status);
           const xml = await r.text();
           if (xml.length > 3_000_000) throw new Error('Feed too large');
-          const items = parseFeed(xml, { ...source, category: feed.category });
+          const items = parseFeed(xml, { ...source, category: feed.category, region: feed.region });
           results.push({ source: source.id, available: true, items });
         } catch (error) {
           console.warn('RSS fetch failed:', source.id, error instanceof Error ? error.message : 'Unknown error');
@@ -100,6 +103,11 @@ export async function getNews(fetcher = fetch, { force = false } = {}) {
     const unique = new Map();
     for (const a of results.flatMap(r => r.items)) {
       const previous = unique.get(a.url);
+      if (previous) {
+        const regionIds = [...new Set([...previous.regions, ...a.regions])];
+        previous.regions = regionIds;
+        a.regions = regionIds;
+      }
       if (!previous || a.generalFeed && !previous.generalFeed) unique.set(a.url, a);
     }
     // Preserve different publishers' coverage for the bulletin's shared-story ranking.

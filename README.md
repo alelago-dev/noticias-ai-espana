@@ -8,7 +8,7 @@ Una app web instalable para móvil: abrir al salir y escuchar las noticias princ
 - Elegir España, Mundo o Mis temas y las últimas 6, 12 o 24 horas (12 por defecto en el informativo). No se rellena una ventana vacía con noticias antiguas.
 
 - Elegir entre 13 categorías, asignar cuatro niveles de interés y seleccionar hasta cinco subtemas por categoría (89 subtemas disponibles).
-- Consultar noticias recientes de EL PAÍS, ABC, elDiario.es, Europa Press, Xataka, EL MUNDO, 20minutos, La Vanguardia, El Confidencial, EL ESPAÑOL e Infobae España mediante 16 RSS generales y temáticos.
+- Consultar noticias recientes de EL PAÍS, ABC, elDiario.es, Europa Press, Xataka, EL MUNDO, 20minutos, La Vanguardia, El Periódico, El Confidencial, EL ESPAÑOL e Infobae España mediante 21 RSS generales, temáticos y locales. Incluye los canales de Barcelona de La Vanguardia, 20minutos y El Periódico, y el de Catalunya de elDiario.es; la disponibilidad depende de que cada medio permita leer su RSS desde el hosting.
 - Priorizar una comunidad autónoma o municipio, añadir hasta diez intereses propios y elegir los medios incluidos.
 - Usar una ventana de 6, 12, 24 o 48 horas en el feed personalizado, con 24 horas por defecto.
 - Activar «solo mis subtemas» para excluir otros subtemas dentro de las categorías afinadas.
