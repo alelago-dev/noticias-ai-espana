@@ -26,6 +26,15 @@ export const sources = [
   { id: 'elconfidencial', name: 'El Confidencial', site: 'https://www.elconfidencial.com', hosts: ['elconfidencial.com'], color: '#244e74', feeds: [{ url: 'https://rss.elconfidencial.com/espana/', category: 'espana' }] },
   { id: 'elespanol', name: 'EL ESPAÑOL', site: 'https://www.elespanol.com', hosts: ['elespanol.com'], color: '#344659', feeds: [{ url: 'https://www.elespanol.com/rss' }] },
   { id: 'infobae', name: 'Infobae España', site: 'https://www.infobae.com/espana/', hosts: ['infobae.com'], color: '#e47725', feeds: [{ url: 'https://www.infobae.com/arc/outboundfeeds/rss/category/espana/', fallback: 'feedly' }] },
+  { id: 'billboard', name: 'Billboard', site: 'https://www.billboard.com', hosts: ['billboard.com'], color: '#5066aa', feeds: [{ url: 'https://www.billboard.com/feed/', category: 'musica', coverage: 'mundo', fallback: 'feedly' }] },
+  { id: 'rollingstone', name: 'Rolling Stone', site: 'https://www.rollingstone.com/music/music-news/', hosts: ['rollingstone.com'], color: '#b72c42', feeds: [{ url: 'https://www.rollingstone.com/music/music-news/feed/', category: 'musica', coverage: 'mundo', fallback: 'feedly' }] },
+  { id: 'pitchfork', name: 'Pitchfork', site: 'https://pitchfork.com/news/', hosts: ['pitchfork.com'], color: '#7b547d', feeds: [{ url: 'https://pitchfork.com/feed/feed-news/rss', category: 'musica', coverage: 'mundo', fallback: 'feedly' }] },
+  { id: 'nme', name: 'NME', site: 'https://www.nme.com/news/music', hosts: ['nme.com'], color: '#a64444', feeds: [{ url: 'https://www.nme.com/news/music/feed', category: 'musica', coverage: 'mundo', fallback: 'feedly' }] },
+  { id: 'stereogum', name: 'Stereogum', site: 'https://stereogum.com', hosts: ['stereogum.com'], color: '#5a697d', feeds: [{ url: 'https://stereogum.com/feed', category: 'musica', coverage: 'mundo', fallback: 'feedly' }] },
+  { id: 'consequence', name: 'Consequence', site: 'https://consequence.net', hosts: ['consequence.net'], color: '#79679b', feeds: [{ url: 'https://consequence.net/feed/', category: 'musica', coverage: 'mundo', fallback: 'feedly' }] },
+  { id: 'guardianmusica', name: 'The Guardian · Música', site: 'https://www.theguardian.com/music', hosts: ['theguardian.com'], color: '#396b85', feeds: [{ url: 'https://www.theguardian.com/music/rss', category: 'musica', coverage: 'mundo', fallback: 'feedly' }] },
+  { id: 'jenesaispop', name: 'Jenesaispop', site: 'https://jenesaispop.com', hosts: ['jenesaispop.com'], color: '#aa5390', feeds: [{ url: 'https://jenesaispop.com/feed/', category: 'musica', fallback: 'feedly' }] },
+  { id: 'mondosonoro', name: 'Mondo Sonoro', site: 'https://www.mondosonoro.com', hosts: ['mondosonoro.com'], color: '#80713f', feeds: [{ url: 'https://www.mondosonoro.com/feed/', category: 'musica', fallback: 'feedly' }] },
 ];
 
 const parser = new XMLParser({ ignoreAttributes: false, processEntities: true, removeNSPrefix: true });
@@ -47,6 +56,20 @@ export function classify(text, fallback = 'espana') {
   return annotateArticle({ title: text, excerpt: '' }, '', fallback).category;
 }
 
+// Translate topic cues only inside editorial music feeds. This avoids turning
+// a cycling tour or a film festival from a general feed into a music story.
+function musicTopicMetadata(text) {
+  const normalized = normalizeText(text);
+  const cues = [
+    [/\b(concerts?|gigs?|tours?|giras?|conciertos?|recitales?)\b/, 'concierto'],
+    [/\b(albums?|discos?|singles?|songs?|canciones?|new ep|ep)\b/, 'cancion'],
+    [/\b(festivals?|festivales?)\b/, 'festival de musica'],
+    [/\b(classical|operas?|orchestras?|symphony|symphonies)\b/, 'musica clasica'],
+    [/\b(electronic|electronica|hip hop|reggaeton|regueton|techno|rap|trap|djs?)\b/, 'musica electronica'],
+  ];
+  return cues.filter(([pattern]) => pattern.test(normalized)).map(([, cue]) => cue).join(' ');
+}
+
 export function parseFeed(xml, source, now = Date.now()) {
   const data = parser.parse(xml);
   const items = data.rss?.channel?.item ?? data.feed?.entry ?? [];
@@ -61,16 +84,22 @@ export function parseFeed(xml, source, now = Date.now()) {
     const rawExcerpt = cleanText(item.description || item.summary).slice(0, 600);
     const excerpt = rawExcerpt.length > 450 ? rawExcerpt.slice(0, 447).replace(/\s\S*$/, '') + '…' : rawExcerpt;
     const tags = (Array.isArray(item.category) ? item.category : [item.category]).map(cleanText).join(' ');
+    const topicTags = source.category === 'musica' ? tags + ' ' + musicTopicMetadata(title + ' ' + excerpt + ' ' + tags) : tags;
     
     let hash = 2166136261;
     for (const c of url) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619);
-    const article = annotateArticle({ id: source.id + '-' + (hash >>> 0).toString(36), title, excerpt, url, publishedAt: published.toISOString(), source: source.id, sourceName: source.name, feedPosition, generalFeed: !source.category && !source.region }, tags, source.category || 'espana');
+    const article = annotateArticle({ id: source.id + '-' + (hash >>> 0).toString(36), title, excerpt, url, publishedAt: published.toISOString(), source: source.id, sourceName: source.name, feedPosition, generalFeed: !source.category && !source.region }, topicTags, source.category || 'espana');
+    if (source.category === 'musica') {
+      article.category = 'musica';
+      if (!article.categories.includes('musica')) article.categories.push('musica');
+      if (source.coverage === 'mundo' && !article.topics.includes('musica:internacional')) article.topics.push('musica:internacional');
+    }
     // Regional RSS sections supply location even when the headline omits it.
     if (regions.some(r => r.id === source.region) && !article.regions.includes(source.region)) article.regions.push(source.region);
     const internationalSection = /\/(internacional|international|mundo|world)(\/|-)/i.test(new URL(url).pathname) || /\b(internacional|mundo|international|world)\b/.test(normalizeText(tags));
     const domesticSection = /\/(espana|politica|nacional|andalucia|madrid|catalunya|cataluna|comunidad-valenciana)(\/|-)/i.test(new URL(url).pathname);
     const foreign = /\b(ucrania|rusia|israel|gaza|libano|iran|china|estados unidos|trump|zelenski|putin|netanyahu|francia|alemania|reino unido|portugal|argentina|brasil|mexico|venezuela)\b/.test(normalizeText(title));
-    article.coverage = internationalSection ? 'mundo' : domesticSection || article.regions.length ? 'espana' : article.category === 'internacional' || foreign ? 'mundo' : 'espana';
+    article.coverage = internationalSection ? 'mundo' : domesticSection || article.regions.length ? 'espana' : article.category === 'internacional' || foreign ? 'mundo' : source.coverage || 'espana';
     return [article];
   });
 }
@@ -90,7 +119,7 @@ export async function getNews(fetcher = fetch, { force = false } = {}) {
         const { source, feed } = tasks[cursor++];
         try {
           const { xml, relayed } = await readRSSFeed(feed, fetcher);
-          const items = parseFeed(xml, { ...source, category: feed.category, region: feed.region });
+          const items = parseFeed(xml, { ...source, category: feed.category, region: feed.region, coverage: feed.coverage });
           results.push({ source: source.id, available: true, items, relayed });
         } catch (error) {
           console.warn('RSS fetch failed:', source.id, error instanceof Error ? error.message : 'Unknown error');
