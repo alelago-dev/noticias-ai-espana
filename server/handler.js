@@ -1,3 +1,4 @@
+import { musicGenres } from '../public/music-filters.js';
 import { categories, regions, sources, getNews, personalize, findEvidence } from './news.js';
 import { synthesize } from './ai.js';
 import { writeBroadcast, buildClips, llmAvailable } from './broadcast.js';
@@ -34,7 +35,7 @@ export async function api(request, env = {}) {
     const data = await getMusicAnniversaries();
     return json({ ...data, items: filterAnniversaries(data.items, { era, kind }) }, data.available ? 200 : 503);
   }
-  if (path === '/api/config' && request.method === 'GET') return json({ categories: categories.map(c => ({ ...c, topics: c.topics.map(({ id, name }) => ({ id, name })) })), regions: regions.map(({ id, name }) => ({ id, name })), sources: sources.map(({ id, name, color, site }) => ({ id, name, color, site })), aiAvailable: llmAvailable(env), audioAvailable: ttsAvailable(env), audioVoices: ttsAvailable(env) ? Object.values(VOICE_NAMES) : [] });
+  if (path === '/api/config' && request.method === 'GET') return json({ musicGenres, categories: categories.map(c => ({ ...c, topics: c.topics.map(({ id, name }) => ({ id, name })) })), regions: regions.map(({ id, name }) => ({ id, name })), sources: sources.map(({ id, name, color, site }) => ({ id, name, color, site })), aiAvailable: llmAvailable(env), audioAvailable: ttsAvailable(env), audioVoices: ttsAvailable(env) ? Object.values(VOICE_NAMES) : [] });
   if (path === '/api/news' && request.method === 'GET') {
     const news = await getNews(fetch, { force: new URL(request.url).searchParams.get('refresh') === '1' });
     return json(news, news.articles.length ? 200 : 503);

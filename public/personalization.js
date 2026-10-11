@@ -1,3 +1,5 @@
+import { classifyMusic, musicGenres } from './music-filters.js';
+export { musicGenres };
 const topic = (id, name, words) => ({ id, name, words: words.split('|') });
 export const categories = [
   { id: 'espana', name: 'España y tu zona', icon: '◈', topics: [
@@ -162,9 +164,11 @@ export function annotateArticle(article, metadata = '', fallback = 'espana') {
     if (score) weights.set(c.id, score);
   }
   if (fallback !== 'espana') weights.set(fallback, (weights.get(fallback) || 0) + 3);
+  const music = classifyMusic(article, metadata, fallback === 'musica');
+  if (music.musicGenres.length && !weights.has('musica')) weights.set('musica', 3);
   const ranked = [...weights].sort((a, b) => b[1] - a[1]);
   const regionIds = regions.filter(r => matchesWords(headline + ' ' + body, r.words)).map(r => r.id);
-  return { ...article, category: ranked[0]?.[0] || fallback, categories: ranked.filter(([, n]) => n >= 3).map(([id]) => id), topics: topicIds, regions: regionIds };
+  return { ...article, category: ranked[0]?.[0] || fallback, categories: ranked.filter(([, n]) => n >= 3).map(([id]) => id), topics: topicIds, regions: regionIds, ...music };
 }
 export function normalizePreferences(input = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) input = {};
@@ -181,6 +185,8 @@ export function normalizeProfile(input = {}) {
     excludedSources: Array.isArray(input.excludedSources) ? [...new Set(input.excludedSources.filter(id => typeof id === 'string'))].slice(0, 30) : [],
     hours: [6, 12, 24, 48].includes(input.hours) ? input.hours : 24,
     topicMode: input.topicMode === 'strict' ? 'strict' : 'priority',
+    musicGenres: Array.isArray(input.musicGenres) ? [...new Set(input.musicGenres.filter(id => musicGenres.some(g => g.id === id)))] : [],
+    musicSpainOnly: input.musicSpainOnly === true,
   };
 }
 
@@ -193,6 +199,9 @@ export function personalize(articles, preferences, limit = 30, profileInput = {}
     if (!Number.isFinite(hours) || hours < -5 / 60 || hours > profile.hours || profile.excludedSources.includes(a.source)) continue;
     const cats = [...new Set([a.category, ...(a.categories || [])])].filter(id => p[id] > 0);
     if (!cats.length) continue;
+    const isMusic = a.category === 'musica' || a.categories?.includes('musica') || a.musicGenres?.length;
+    if (isMusic && profile.musicGenres.length && !profile.musicGenres.some(id => a.musicGenres?.includes(id))) continue;
+    if (isMusic && profile.musicSpainOnly && a.musicSpainEvent !== true) continue;
     const topicMatches = cats.flatMap(id => profile.topics[id].filter(t => a.topics?.includes(id + ':' + t)).map(t => categories.find(c => c.id === id).topics.find(x => x.id === t).name));
     if (profile.topicMode === 'strict' && cats.every(id => profile.topics[id].length > 0) && !topicMatches.length) continue;
     const text = normalizeText(a.title + ' ' + a.excerpt);
@@ -200,7 +209,8 @@ export function personalize(articles, preferences, limit = 30, profileInput = {}
     const local = !!((profile.region && a.regions?.includes(profile.region)) || (city.length >= 3 && hasTerm(text, city)));
     const interest = Math.max(...cats.map(id => p[id]));
     const score = interest * 5 + Math.min(topicMatches.length, 2) * 12 + Math.min(keywordMatches.length, 2) * 10 + (local ? 12 : 0) + 30 * Math.exp(-Math.max(0, hours) / 5);
-    const reasons = [...topicMatches.slice(0, 2), ...keywordMatches.slice(0, 1), ...(local ? ['Tu zona'] : [])];
+    const genreMatches = isMusic ? musicGenres.filter(g => profile.musicGenres.includes(g.id) && a.musicGenres?.includes(g.id)).map(g => g.name) : [];
+    const reasons = [...(isMusic && profile.musicSpainOnly ? ['Conciertos en España'] : []), ...genreMatches.slice(0, 2), ...topicMatches.slice(0, 2), ...keywordMatches.slice(0, 1), ...(local ? ['Tu zona'] : [])];
     candidates.push({ ...a, matchReasons: reasons.length ? reasons : [categories.find(c => c.id === cats[0]).name], affinityScore: score, freshnessTier: hours <= 12 ? 0 : hours <= 24 ? 1 : 2 });
   }
   candidates.sort((a, b) => options.sort === 'recent' ? +new Date(b.publishedAt) - +new Date(a.publishedAt) : a.freshnessTier - b.freshnessTier || b.affinityScore - a.affinityScore || +new Date(b.publishedAt) - +new Date(a.publishedAt));

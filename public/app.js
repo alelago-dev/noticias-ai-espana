@@ -1,4 +1,4 @@
-import { personalize, normalizeProfile, normalizeText } from './personalization.js';
+import { personalize, normalizeProfile, normalizeText, musicGenres } from './personalization.js';
 import { selectBulletin } from './bulletin.js';
 import { NewsPlayer } from './audio-player.js';
 import { ClipPlayer } from './clip-player.js';
@@ -76,19 +76,23 @@ function renderFeed() {
   const available = news.sources.filter(s => s.fresh).length;
   $('#news-meta').textContent = news.updatedAt ? items.length + ' noticias en ' + profile.hours + ' h · ' + available + ' medios con actualidad · Comprobado ' + new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(news.updatedAt)) : 'Actualidad de medios españoles';
   const regionName = config.regions?.find(r => r.id === profile.region)?.name;
-  $('#freshness-note').textContent = 'Últimas ' + profile.hours + ' horas' + (profile.topicMode === 'strict' ? ' · Solo tus subtemas' : ' · Tus subtemas tienen prioridad') + (profile.city || regionName ? ' · Cerca de ' + (profile.city || regionName) : '');
+  $('#freshness-note').textContent = 'Últimas ' + profile.hours + ' horas' + (profile.topicMode === 'strict' ? ' · Solo tus subtemas' : ' · Tus subtemas tienen prioridad') + (preferences.musica > 0 && profile.musicSpainOnly ? ' · Música: conciertos en España' : '') + (profile.city || regionName ? ' · Cerca de ' + (profile.city || regionName) : '');
 }
 function renderInterests() {
   const selected = config.categories.filter(c => preferences[c.id] > 0);
   const labels = selected.flatMap(c => profile.topics[c.id].map(id => c.topics.find(t => t.id === id)?.name).filter(Boolean));
-  const tags = labels.length ? labels : selected.map(c => c.name);
+  const genres = preferences.musica > 0 ? musicGenres.filter(g => profile.musicGenres.includes(g.id)).map(g => g.name) : [];
+  const tags = labels.length || genres.length ? [...genres, ...labels] : selected.map(c => c.name);
   $('#interest-tags').innerHTML = tags.slice(0, 5).map(name => `<span class="interest-tag">${esc(name)}</span>`).join('') + (tags.length > 5 ? `<span class="interest-tag">+${tags.length - 5}</span>` : '') || '<span class="interest-tag">Elige tu primer tema</span>';
   $('#filters').innerHTML = `<button data-filter="all" class="${filter === 'all' ? 'active' : ''}" aria-pressed="${filter === 'all'}">Para ti</button>` + selected.map(c => `<button data-filter="${c.id}" class="${filter === c.id ? 'active' : ''}" aria-pressed="${filter === c.id}">${esc(c.name)}</button>`).join('');
+}
+function musicFilterControls() {
+  return `<div class="music-filters"><h3>Estilos que quieres seguir</h3><p>Elige tantos como quieras. Sin selección, recibes todos los estilos. Estos filtros se aplican a las noticias de música del feed y de «Mis temas».</p><div class="topic-chips" role="group" aria-label="Estilos musicales">${musicGenres.map(g => `<button data-music-genre="${g.id}" class="topic-chip ${draftProfile.musicGenres.includes(g.id) ? 'selected' : ''}" aria-pressed="${draftProfile.musicGenres.includes(g.id)}">${draftProfile.musicGenres.includes(g.id) ? '<span aria-hidden="true">✓</span> ' : ''}${esc(g.name)}</button>`).join('')}</div><div class="music-filter-actions"><button class="text-button" data-music-preset>Elegir indie y rock</button><button class="text-button" data-music-clear>Todos los estilos</button></div><label class="toggle-label"><input type="checkbox" id="music-spain-only" ${draftProfile.musicSpainOnly ? 'checked' : ''}><span>Solo conciertos y giras en España<small>Combina los estilos elegidos con menciones de conciertos, giras o festivales en España. Desactívalo para recibir también discos, entrevistas y otras novedades.</small></span></label><p class="music-filter-note">Puedes añadir nombres de bandas en «Nombres, lugares y temas propios» para darles prioridad dentro de tu selección. Las coincidencias se detectan en titulares y extractos; no es una agenda completa de conciertos.</p></div>`;
 }
 function renderDraftCards() {
   $('#preferences-grid').innerHTML = config.categories.map(c => {
     const topics = draftProfile.topics[c.id];
-    return `<section class="preference-card ${draftPreferences[c.id] === 0 ? 'unfollowed' : ''}"><div class="preference-title"><span aria-hidden="true">${esc(c.icon)}</span>${esc(c.name)}<small>${topics.length ? topics.length + ' de 5' : 'Todos los subtemas'}</small></div><div class="levels" role="group" aria-label="Interés en ${esc(c.name)}">${['No seguir', 'Algo', 'Bastante', 'Mucho'].map((label, n) => `<button data-interest="${c.id}" data-level="${n}" class="${draftPreferences[c.id] === n ? 'active' : ''}" aria-pressed="${draftPreferences[c.id] === n}">${label}</button>`).join('')}</div><div class="topic-chips" role="group" aria-label="Subtemas de ${esc(c.name)}">${c.topics.map(t => `<button data-topic="${t.id}" data-category="${c.id}" class="topic-chip ${topics.includes(t.id) ? 'selected' : ''}" aria-pressed="${topics.includes(t.id)}">${topics.includes(t.id) ? '<span aria-hidden="true">✓</span> ' : ''}${esc(t.name)}</button>`).join('')}</div></section>`;
+    return `<section class="preference-card ${draftPreferences[c.id] === 0 ? 'unfollowed' : ''}"><div class="preference-title"><span aria-hidden="true">${esc(c.icon)}</span>${esc(c.name)}<small>${topics.length ? topics.length + ' de 5' : 'Todos los subtemas'}</small></div><div class="levels" role="group" aria-label="Interés en ${esc(c.name)}">${['No seguir', 'Algo', 'Bastante', 'Mucho'].map((label, n) => `<button data-interest="${c.id}" data-level="${n}" class="${draftPreferences[c.id] === n ? 'active' : ''}" aria-pressed="${draftPreferences[c.id] === n}">${label}</button>`).join('')}</div><div class="topic-chips" role="group" aria-label="Subtemas de ${esc(c.name)}">${c.topics.map(t => `<button data-topic="${t.id}" data-category="${c.id}" class="topic-chip ${topics.includes(t.id) ? 'selected' : ''}" aria-pressed="${topics.includes(t.id)}">${topics.includes(t.id) ? '<span aria-hidden="true">✓</span> ' : ''}${esc(t.name)}</button>`).join('')}</div>${c.id === 'musica' ? musicFilterControls() : ''}</section>`;
   }).join('');
   updateSaveStatus();
 }
@@ -110,14 +114,23 @@ function updateSaveStatus() {
   const dirty = JSON.stringify(draftPreferences) !== JSON.stringify(preferences) || JSON.stringify(draftProfile) !== JSON.stringify(profile);
   const cats = config.categories.filter(c => draftPreferences[c.id] > 0);
   const count = cats.reduce((n, c) => n + draftProfile.topics[c.id].length, 0);
-  $('#profile-summary').textContent = cats.length + ' categorías · ' + count + ' subtemas elegidos';
+  $('#profile-summary').textContent = cats.length + ' categorías · ' + count + ' subtemas' + (draftPreferences.musica > 0 && draftProfile.musicGenres.length ? ' · ' + draftProfile.musicGenres.length + ' estilos musicales' : '');
   $('#save-status').textContent = dirty ? 'Cambios sin guardar' : 'Tu selección está guardada en este dispositivo';
   $('#save-preferences').disabled = !dirty;
 }
 $('#filters').addEventListener('click', e => { const b = e.target.closest('[data-filter]'); if (!b) return; filter = b.dataset.filter; displayLimit = 9; renderInterests(); renderFeed(); });
 $('#preferences-grid').addEventListener('click', e => {
-  const level = e.target.closest('[data-interest]'), t = e.target.closest('[data-topic]');
-  if (level) draftPreferences[level.dataset.interest] = Number(level.dataset.level);
+  const level = e.target.closest('[data-interest]'), t = e.target.closest('[data-topic]'), genre = e.target.closest('[data-music-genre]');
+  if (genre) {
+    const id = genre.dataset.musicGenre;
+    draftProfile.musicGenres = draftProfile.musicGenres.includes(id) ? draftProfile.musicGenres.filter(g => g !== id) : [...draftProfile.musicGenres, id];
+    if (draftProfile.musicGenres.length && !draftPreferences.musica) draftPreferences.musica = 2;
+  } else if (e.target.closest('[data-music-preset]')) {
+    draftProfile.musicGenres = musicGenres.map(g => g.id);
+    if (!draftPreferences.musica) draftPreferences.musica = 2;
+  } else if (e.target.closest('[data-music-clear]')) {
+    draftProfile.musicGenres = [];
+  } else if (level) draftPreferences[level.dataset.interest] = Number(level.dataset.level);
   else if (t) {
     const id = t.dataset.category, selected = draftProfile.topics[id];
     if (selected.includes(t.dataset.topic)) draftProfile.topics[id] = selected.filter(x => x !== t.dataset.topic);
@@ -128,8 +141,18 @@ $('#preferences-grid').addEventListener('click', e => {
     }
   } else return;
   renderDraftCards();
+  if (genre) $(`[data-music-genre="${genre.dataset.musicGenre}"]`)?.focus({ preventScroll: true });
+  if (e.target.closest('[data-music-preset]')) $('[data-music-preset]')?.focus({ preventScroll: true });
+  if (e.target.closest('[data-music-clear]')) $('[data-music-clear]')?.focus({ preventScroll: true });
   if (t) $(`[data-category="${t.dataset.category}"][data-topic="${t.dataset.topic}"]`)?.focus({ preventScroll: true });
   if (level) $(`[data-interest="${level.dataset.interest}"][data-level="${level.dataset.level}"]`)?.focus({ preventScroll: true });
+});
+$('#preferences-grid').addEventListener('change', e => {
+  if (e.target.id !== 'music-spain-only') return;
+  draftProfile.musicSpainOnly = e.target.checked;
+  if (e.target.checked && !draftPreferences.musica) draftPreferences.musica = 2;
+  renderDraftCards();
+  $('#music-spain-only').focus({ preventScroll: true });
 });
 $('#select-all').onclick = () => { draftPreferences = Object.fromEntries(config.categories.map(c => [c.id, 2])); renderDraftCards(); };
 $('#reset-interests').onclick = () => { draftPreferences = { ...defaults }; draftProfile = normalizeProfile({}); renderProfileControls(); toast('Selección inicial preparada. Pulsa Guardar cambios para aplicarla.'); };
