@@ -37,23 +37,33 @@ function userPrompt(articles, options) {
   });
 }
 
+// New projects can no longer call gemini-2.5-* (models.list still shows them, but
+// generateContent answers 404 NOT_FOUND), so the defaults are the models Google
+// recommends for new projects. A 404 moves on to the next candidate.
+export const GEMINI_DEFAULT_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
+export const geminiModels = env => [...new Set([env.GEMINI_MODEL, ...GEMINI_DEFAULT_MODELS].filter(Boolean))];
+
 async function viaGemini(articles, env, options, fetcher) {
-  const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
   const base = (env.GEMINI_ENDPOINT || 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
-  const response = await fetcher(`${base}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM }] },
-      contents: [{ role: 'user', parts: [{ text: userPrompt(articles, options) }] }],
-      generationConfig: { responseMimeType: 'application/json', responseSchema: geminiSchema, temperature: 0.4 },
-    }),
-    signal: AbortSignal.timeout(40_000),
-  });
-  if (!response.ok) throw new Error('gemini-' + response.status);
-  const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
-  return itemSchema.parse(JSON.parse(text)).items;
+  let notFound = null;
+  for (const model of geminiModels(env)) {
+    const response = await fetcher(`${base}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM }] },
+        contents: [{ role: 'user', parts: [{ text: userPrompt(articles, options) }] }],
+        generationConfig: { responseMimeType: 'application/json', responseSchema: geminiSchema, temperature: 0.4 },
+      }),
+      signal: AbortSignal.timeout(40_000),
+    });
+    if (response.status === 404) { console.warn('Gemini model not available for generateContent:', model); notFound = new Error('gemini-404'); continue; }
+    if (!response.ok) throw new Error('gemini-' + response.status);
+    const data = await response.json();
+    const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+    return itemSchema.parse(JSON.parse(text)).items;
+  }
+  throw notFound || new Error('gemini-no-model');
 }
 
 async function viaGateway(articles, env, options) {

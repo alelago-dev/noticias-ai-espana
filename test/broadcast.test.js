@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { figuresSupported, vetParagraphs, broadcastFrame, writeBroadcast, buildClips } from '../server/broadcast.js';
+import { figuresSupported, vetParagraphs, broadcastFrame, writeBroadcast, buildClips, geminiModels } from '../server/broadcast.js';
 import { signClip, verifyClip, voiceFor, splitText, ssml, synthesizeSpeech, VOICES } from '../server/tts.js';
 
 const articles = [
@@ -76,7 +76,7 @@ test('Gemini script is parsed, vetted and cached; failures fall back to the exce
   let requests = 0;
   const ok = async (url, init) => {
     requests++;
-    assert.match(url, /^https:\/\/gemini\.test\/v1beta\/models\/gemini-2\.5-flash:generateContent$/);
+    assert.match(url, /^https:\/\/gemini\.test\/v1beta\/models\/gemini-3\.5-flash-lite:generateContent$/);
     assert.equal(init.headers['x-goog-api-key'], 'g-key');
     assert.match(JSON.parse(init.body).systemInstruction.parts[0].text, /EXCLUSIVAMENTE/);
     const items = [{ text: 'En economía, el Gobierno aprueba 300 millones para vivienda, según EL PAÍS.', sourceIds: ['a'] }, { text: 'Y en deporte, Alonso saldrá desde el pitlane, según Europa Press.', sourceIds: ['b'] }];
@@ -101,4 +101,24 @@ test('Clips keep story order, read the opening first and the closing last, and a
   assert.deepEqual(clips.map(c => c.voice), [VOICES.female, VOICES.male]);
   assert.deepEqual(clips.map(c => c.voiceName), ['Elvira', 'Álvaro']);
   for (const clip of clips) assert.equal(await verifyClip(clip.text, clip.voice, clip.sig, env), true);
+});
+
+test('A 404 for one Gemini model moves on to the next candidate; other errors stop', async () => {
+  assert.deepEqual(geminiModels({}), ['gemini-3.5-flash-lite', 'gemini-3.8-flash']);
+  assert.deepEqual(geminiModels({ GEMINI_MODEL: 'custom-model' }), ['custom-model', 'gemini-3.5-flash-lite', 'gemini-3.8-flash']);
+  const geminiEnv = { GEMINI_API_KEY: 'g-key', GEMINI_ENDPOINT: 'https://gemini.test', GEMINI_MODEL: 'gemini-2.5-flash' };
+  const fresh = () => articles.map(a => ({ ...a, title: a.title + ' ' + Math.random() }));
+  const tried = [];
+  const fetcher = async url => {
+    const model = url.match(/models\/([^:]+):/)[1]; tried.push(model);
+    if (model !== 'gemini-3.8-flash') return new Response('{"error":{"status":"NOT_FOUND"}}', { status: 404 });
+    const items = [{ text: 'En economía, según EL PAÍS, el Gobierno aprueba 300 millones para vivienda.', sourceIds: ['a'] }, { text: 'Y en deporte, según Europa Press, Alonso saldrá desde el pitlane.', sourceIds: ['b'] }];
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ items }) }] } }] }));
+  };
+  assert.equal((await writeBroadcast(fresh(), geminiEnv, {}, fetcher)).mode, 'ai');
+  assert.deepEqual(tried, ['gemini-2.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.8-flash']);
+  assert.equal((await writeBroadcast(fresh(), geminiEnv, {}, async () => new Response('{}', { status: 404 }))).mode, 'extractive', 'still falls back to headlines and excerpts');
+  const urls = [];
+  const stopped = await writeBroadcast(fresh(), geminiEnv, {}, async url => { urls.push(url); return new Response('{}', { status: 403 }); });
+  assert.equal(stopped.mode, 'extractive'); assert.equal(urls.length, 1, 'a non-404 error is not retried on other models');
 });

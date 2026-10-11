@@ -58,7 +58,7 @@ AZURE_SPEECH_REGION=<región, por ejemplo westeurope>
 
 # Guion: Gemini (capa gratuita). Alternativa: AI_GATEWAY_API_KEY + AI_GATEWAY_MODEL
 GEMINI_API_KEY=<secreto>
-GEMINI_MODEL=<opcional; por defecto gemini-2.5-flash, comprueba el nombre vigente>
+GEMINI_MODEL=<opcional; por defecto gemini-3.5-flash-lite y, si responde 404, gemini-3.8-flash. Los proyectos nuevos ya no pueden usar gemini-2.5-* aunque models.list los muestre. Comprueba con: GEMINI_API_KEY=... node scripts/check-gemini.mjs>
 ```
 
 Cómo funciona:

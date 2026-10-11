@@ -18,7 +18,7 @@ GitHub Actions Secrets, un `.env` local o un recurso de Azure.
 | `AZURE_SPEECH_KEY` | Una clave del recurso Azure AI Speech | Sí |
 | `AZURE_SPEECH_REGION` | La región de ese mismo recurso, por ejemplo `westeurope` | No |
 | `GEMINI_API_KEY` | Clave de Gemini obtenida en Google AI Studio | Sí |
-| `GEMINI_MODEL` | Opcional: ID del modelo Gemini habilitado para tu clave; el código usa `gemini-2.5-flash` si se omite | No |
+| `GEMINI_MODEL` | Opcional: ID del modelo Gemini habilitado para tu clave; si se omite, prueba `gemini-3.5-flash-lite` y después `gemini-3.8-flash` solo si recibe 404 | No |
 | `AUDIO_SIGNING_SECRET` | Opcional: secreto aleatorio independiente, de al menos 32 bytes | Sí |
 
 En el editor de variables de producción de Sites, si está disponible en tu
