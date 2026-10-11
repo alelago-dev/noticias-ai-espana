@@ -1,5 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import { decodeHTML } from 'entities';
+import { readRSSFeed } from './rss-feed.js';
 
 import { categories, regions, annotateArticle, normalizePreferences, normalizeProfile, personalize, normalizeText } from '../public/personalization.js';
 export { categories, regions, normalizePreferences, normalizeProfile, personalize };
@@ -24,7 +25,7 @@ export const sources = [
   { id: 'elperiodico', name: 'El Periódico', site: 'https://www.elperiodico.com', hosts: ['elperiodico.com'], color: '#b52d3a', feeds: [{ url: 'https://www.elperiodico.com/es/rss/rss_portada.xml' }, { url: 'https://www.elperiodico.com/es/rss/barcelona/rss.xml', region: 'cataluna' }] },
   { id: 'elconfidencial', name: 'El Confidencial', site: 'https://www.elconfidencial.com', hosts: ['elconfidencial.com'], color: '#244e74', feeds: [{ url: 'https://rss.elconfidencial.com/espana/', category: 'espana' }] },
   { id: 'elespanol', name: 'EL ESPAÑOL', site: 'https://www.elespanol.com', hosts: ['elespanol.com'], color: '#344659', feeds: [{ url: 'https://www.elespanol.com/rss' }] },
-  { id: 'infobae', name: 'Infobae España', site: 'https://www.infobae.com/espana/', hosts: ['infobae.com'], color: '#e47725', feeds: [{ url: 'https://www.infobae.com/arc/outboundfeeds/rss/category/espana/' }] },
+  { id: 'infobae', name: 'Infobae España', site: 'https://www.infobae.com/espana/', hosts: ['infobae.com'], color: '#e47725', feeds: [{ url: 'https://www.infobae.com/arc/outboundfeeds/rss/category/espana/', fallback: 'feedly' }] },
 ];
 
 const parser = new XMLParser({ ignoreAttributes: false, processEntities: true, removeNSPrefix: true });
@@ -88,15 +89,12 @@ export async function getNews(fetcher = fetch, { force = false } = {}) {
       while (cursor < tasks.length) {
         const { source, feed } = tasks[cursor++];
         try {
-          const r = await fetcher(feed.url, { headers: { 'User-Agent': 'Brujula/2.0 (RSS news reader)', Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml', 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(8000) });
-          if (!r.ok) throw new Error('RSS HTTP ' + r.status);
-          const xml = await r.text();
-          if (xml.length > 3_000_000) throw new Error('Feed too large');
+          const { xml, relayed } = await readRSSFeed(feed, fetcher);
           const items = parseFeed(xml, { ...source, category: feed.category, region: feed.region });
-          results.push({ source: source.id, available: true, items });
+          results.push({ source: source.id, available: true, items, relayed });
         } catch (error) {
           console.warn('RSS fetch failed:', source.id, error instanceof Error ? error.message : 'Unknown error');
-          results.push({ source: source.id, available: false, items: [] });
+          results.push({ source: source.id, available: false, items: [], relayed: false });
         }
       }
     }));
@@ -117,7 +115,7 @@ export async function getNews(fetcher = fetch, { force = false } = {}) {
       const feeds = results.filter(r => r.source === s.id);
       const items = [...new Map(feeds.flatMap(f => f.items).map(a => [a.url, a])).values()].sort((a, b) => +new Date(b.publishedAt) - +new Date(a.publishedAt));
       const latestPublishedAt = items[0]?.publishedAt ?? null;
-      return { id: s.id, name: s.name, available: feeds.some(f => f.available), activeFeeds: feeds.filter(f => f.available).length, totalFeeds: s.feeds.length, count: items.length, recentCount: items.filter(a => now - +new Date(a.publishedAt) <= 24 * 3600_000).length, latestPublishedAt, checkedAt: new Date(now).toISOString(), fresh: !!latestPublishedAt && now - +new Date(latestPublishedAt) <= 24 * 3600_000 };
+      return { id: s.id, name: s.name, available: feeds.some(f => f.available), relayed: feeds.some(f => f.relayed), activeFeeds: feeds.filter(f => f.available).length, totalFeeds: s.feeds.length, count: items.length, recentCount: items.filter(a => now - +new Date(a.publishedAt) <= 24 * 3600_000).length, latestPublishedAt, checkedAt: new Date(now).toISOString(), fresh: !!latestPublishedAt && now - +new Date(latestPublishedAt) <= 24 * 3600_000 };
     });
     const data = { articles, sources: statuses, updatedAt: new Date(now).toISOString(), latestPublishedAt: articles[0]?.publishedAt ?? null };
     cached = { fetched: now, data };
