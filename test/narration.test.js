@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NewsPlayer, speechPhrases } from '../public/audio-player.js';
-import { narratorFor, resolveNarrators, voiceRole, spokenText } from '../public/narration.js';
+import { narratorFor, resolveNarrators, voiceRole, spokenText, bulletinStory, storyNarration } from '../public/narration.js';
 const female = { name: 'Microsoft Elvira Online (Natural)', lang: 'es-ES', voiceURI: 'elvira' };
 const male = { name: 'Microsoft Alvaro Online (Natural)', lang: 'es-ES', voiceURI: 'alvaro' };
 test('Named female and male voices alternate by complete story; preference favors Spanish from Spain', () => {
@@ -42,4 +42,30 @@ test('Narration keeps complete sentences and reads common symbols without changi
   assert.deepEqual(speechPhrases(sentence), [sentence]);
   assert.equal(spokenText('La IA en la UE crece un 2,5 % y cuesta 20 €.'), 'La inteligencia artificial en la Unión Europea crece un 2,5 por ciento y cuesta 20 euros.');
   const abbreviation = 'El Sr. García explica los datos.'; assert.deepEqual(speechPhrases(abbreviation), [abbreviation]);
+});
+test('Each story announces its category and original headline before its attributed summary, without repeating the headline', () => {
+  const title = 'El club anuncia un nuevo entrenador';
+  const articles = [{ id: 'a', title, category: 'deportes', sourceName: 'Medio de prueba' }];
+  const paragraph = { text: title + '. La presentación será mañana.', sourceIds: ['a'] };
+  const story = bulletinStory(paragraph, articles, [{ id: 'deportes', name: 'Deportes' }]);
+  assert.equal(storyNarration(story), 'Deportes: El club anuncia un nuevo entrenador. Según Medio de prueba, La presentación será mañana.');
+  assert.equal(story.body, 'La presentación será mañana.');
+  assert.equal(storyNarration(story).split(title).length, 2);
+});
+test('A drafted summary retains its text and chooses the headline from its first valid citation', () => {
+  const articles = [{ id: 'a', title: 'Titular secundario', category: 'espana', sourceName: 'Medio A' }, { id: 'b', title: 'El mercado publica sus resultados', category: 'economia', sourceName: 'Medio B' }];
+  const paragraph = { text: 'Las cifras aumentaron un 2,5 %.', sourceIds: ['missing', 'b', 'a', 'b'] };
+  const story = bulletinStory(paragraph, articles, [{ id: 'economia', name: 'Economía' }]);
+  assert.equal(story.heading, 'Economía: El mercado publica sus resultados');
+  assert.equal(story.body, paragraph.text);
+  assert.deepEqual(story.sources, ['Medio B', 'Medio A']);
+  assert.equal(storyNarration(story), 'Economía: El mercado publica sus resultados. Según Medio B y Medio A, Las cifras aumentaron un 2,5 por ciento.');
+});
+test('Headline-only news keeps attribution; unavailable metadata does not invent a headline', () => {
+  const paragraph = { text: 'Titular único', sourceIds: ['a'] };
+  const story = bulletinStory(paragraph, [{ id: 'a', title: 'Titular único', category: 'unknown', sourceName: 'Medio' }], []);
+  assert.equal(storyNarration(story), 'Actualidad: Titular único. Fuente: Medio.');
+  const unavailable = bulletinStory(paragraph, [], []);
+  assert.equal(unavailable.title, ''); assert.equal(unavailable.body, paragraph.text);
+  assert.equal(storyNarration(unavailable), 'Actualidad. Titular único');
 });

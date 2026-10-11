@@ -2,7 +2,7 @@ import { personalize, normalizeProfile, normalizeText } from './personalization.
 import { selectBulletin } from './bulletin.js';
 import { NewsPlayer } from './audio-player.js';
 import { NewsMusic, musicPreferences, MUSIC_REVISION } from './news-music.js';
-import { narratorFor, resolveNarrators, voiceKey, spokenText } from './narration.js';
+import { narratorFor, resolveNarrators, voiceKey, bulletinStory, storyNarration } from './narration.js';
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const defaults = { espana: 2, politica: 2, economia: 2, tecnologia: 3, internacional: 1, deportes: 0, ciencia: 1, cultura: 0, musica: 0, salud: 0, medioambiente: 0, sociedad: 0, educacion: 0 };
@@ -216,7 +216,7 @@ function renderEdition() {
   const min = Math.ceil(edition.estimatedSeconds / 60);
   const mode = edition.mode === 'ai' ? 'Resumen con IA · Revisa las fuentes' : 'Selección de titulares y extractos RSS';
   const time = new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(edition.updatedAt));
-  $('#edition-content').innerHTML = `<div class="edition-header"><div><div class="eyebrow">${esc(scopeName(edition.scope))} · ÚLTIMAS ${edition.hours || profile.hours} HORAS</div><h2>Lo que ha pasado, a tu alcance.</h2><p>${min} min aprox. · ${edition.articles.length} noticias · ${new Set(edition.articles.map(a => a.source)).size} medios<br>Fuentes comprobadas a las ${time} · Hora de Madrid</p></div><button id="listen-edition" class="primary-button"><span>▶</span> Escuchar edición</button></div><p class="edition-notice">${esc(mode)}. ${esc(edition.notice || 'La duración depende del contenido disponible. La voz la proporciona tu dispositivo.')} ${edition.mode === 'extractive' ? 'La síntesis redactada con IA está pendiente de activación.' : ''}</p><p class="edition-notice">${edition.scope === 'personal' ? 'Selección según tus intereses.' : 'Selección automática por actualidad, coincidencia de titulares entre medios y variedad de temas. La clasificación geográfica puede contener errores.'} La escucha con la pantalla bloqueada depende del navegador.</p><div class="transcript">${edition.paragraphs.map((p, i) => `<section class="transcript-section" id="paragraph-${i}"><button class="story-listen text-button" data-listen-story="${i}" aria-label="Escuchar noticia ${i + 1}">▶ Escuchar noticia ${i + 1}</button><p>${esc(p.text)}</p>${citations(p, edition.articles)}</section>`).join('')}</div>`;
+  $('#edition-content').innerHTML = `<div class="edition-header"><div><div class="eyebrow">${esc(scopeName(edition.scope))} · ÚLTIMAS ${edition.hours || profile.hours} HORAS</div><h2>Lo que ha pasado, a tu alcance.</h2><p>${min} min aprox. · ${edition.articles.length} noticias · ${new Set(edition.articles.map(a => a.source)).size} medios<br>Fuentes comprobadas a las ${time} · Hora de Madrid</p></div><button id="listen-edition" class="primary-button"><span>▶</span> Escuchar edición</button></div><p class="edition-notice">${esc(mode)}. ${esc(edition.notice || 'La duración depende del contenido disponible. La voz la proporciona tu dispositivo.')} ${edition.mode === 'extractive' ? 'La síntesis redactada con IA está pendiente de activación.' : ''}</p><p class="edition-notice">${edition.scope === 'personal' ? 'Selección según tus intereses.' : 'Selección automática por actualidad, coincidencia de titulares entre medios y variedad de temas. La clasificación geográfica puede contener errores.'} La escucha con la pantalla bloqueada depende del navegador.</p><div class="transcript">${edition.paragraphs.map((p, i) => { const story = bulletinStory(p, edition.articles, config.categories); return `<section class="transcript-section" id="paragraph-${i}"><button class="story-listen text-button" data-listen-story="${i}" aria-label="Escuchar noticia ${i + 1}">▶ Escuchar noticia ${i + 1}</button><h3 class="story-heading">${esc(story.heading)}</h3>${story.body ? `<p>${esc(story.body)}</p>` : ''}${citations(p, edition.articles)}</section>`; }).join('')}</div>`;
   $('#listen-edition').onclick = () => startSpeech(0);
 }
 async function createEdition() {
@@ -261,8 +261,8 @@ function updateMusicControls() {
 function updatePlayer(state) {
   const playing = state.status === 'playing', finished = state.status === 'finished';
   const current = playerEdition?.paragraphs[state.index];
-  const article = playerEdition?.articles.find(a => current?.sourceIds.includes(a.id));
-  $('#player-title').textContent = article?.title || 'Tu informativo Brújula';
+  const story = current && bulletinStory(current, playerEdition.articles, config.categories);
+  $('#player-title').textContent = story?.heading || 'Tu informativo Brújula';
   $('#player-label').textContent = state.previewing ? 'Probando voz · Informativo en pausa' : finished ? 'Edición terminada' : 'Noticia ' + (state.index + 1) + ' de ' + state.count + (state.voiceName ? ' · ' + state.voiceName : '') + (state.status === 'paused' ? ' · En pausa' : '');
   $('#voice-preview-status').textContent = state.previewing ? 'Escuchando la prueba. El informativo queda en pausa.' : '';
   $('#player-toggle').textContent = playing ? 'Ⅱ' : '▶';
@@ -283,9 +283,8 @@ function startSpeech(index) {
   if (!edition?.paragraphs.length) return;
   if (playerEdition !== edition) {
     newsPlayer.load(edition.paragraphs.map((p, i) => {
-      const names = [...new Set(p.sourceIds.map(id => edition.articles.find(a => a.id === id)?.sourceName).filter(Boolean))];
       const opening = i === 0 ? 'Brújula, informativo de ' + scopeName(edition.scope) + '. Noticias de las últimas ' + (edition.hours || profile.hours) + ' horas. ' : '';
-      return spokenText(opening + 'Según ' + names.join(' y ') + ', ' + p.text);
+      return opening + storyNarration(bulletinStory(p, edition.articles, config.categories));
     }));
     playerEdition = edition;
   }

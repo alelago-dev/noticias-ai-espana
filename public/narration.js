@@ -30,3 +30,23 @@ export function spokenText(text) {
     .replace(/\bkm\/h\b/g, 'kilómetros por hora').replace(/%/g, ' por ciento')
     .replace(/€/g, ' euros').replace(/([!?])\./g, '$1').replace(/\s+/g, ' ').trim();
 }
+
+// Keep the original publisher's headline; never invent one from the summary.
+export function bulletinStory(paragraph, articles, categories) {
+  const cited = paragraph.sourceIds.map(id => articles.find(article => article.id === id)).filter(Boolean);
+  const article = cited[0];
+  const topic = categories.find(c => c.id === article?.category)?.name || 'Actualidad';
+  const title = article?.title.trim() || '';
+  let body = paragraph.text.trim();
+  // Extractive editions already start with the headline. Read it only once.
+  if (title && body.startsWith(title) && (!body[title.length] || /[\s.!?…:;]/.test(body[title.length]))) {
+    body = body.slice(title.length).replace(/^[\s.!?…:;]+/, '').trim();
+  }
+  return { topic, title, heading: title ? topic + ': ' + title : topic, body, sources: [...new Set(cited.map(a => a.sourceName).filter(Boolean))] };
+}
+export function storyNarration(story) {
+  const sentence = text => /[.!?…]["»”’)]?$/.test(text) ? text : text + '.';
+  const source = story.sources.join(' y ');
+  const detail = story.body ? (source ? 'Según ' + source + ', ' : '') + story.body : source ? 'Fuente: ' + source + '.' : '';
+  return spokenText(sentence(story.heading) + (detail ? ' ' + detail : ''));
+}
