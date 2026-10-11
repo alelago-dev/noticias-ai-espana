@@ -23,7 +23,7 @@ export const sources = [
   { id: 'lavanguardia', name: 'La Vanguardia', site: 'https://www.lavanguardia.com', hosts: ['lavanguardia.com'], color: '#345b81', feeds: [{ url: 'https://www.lavanguardia.com/rss/home.xml' }] },
   { id: 'elconfidencial', name: 'El Confidencial', site: 'https://www.elconfidencial.com', hosts: ['elconfidencial.com'], color: '#244e74', feeds: [{ url: 'https://rss.elconfidencial.com/espana/', category: 'espana' }] },
   { id: 'elespanol', name: 'EL ESPAÑOL', site: 'https://www.elespanol.com', hosts: ['elespanol.com'], color: '#344659', feeds: [{ url: 'https://www.elespanol.com/rss' }] },
-  { id: 'infobae', name: 'Infobae España', site: 'https://www.infobae.com/espana/', hosts: ['infobae.com'], color: '#e47725', feeds: [{ url: 'https://www.infobae.com/arc/outboundfeeds/rss/category/espana/?outputType=xml' }] },
+  { id: 'infobae', name: 'Infobae España', site: 'https://www.infobae.com/espana/', hosts: ['infobae.com'], color: '#e47725', feeds: [{ url: 'https://www.infobae.com/arc/outboundfeeds/rss/category/espana/' }] },
 ];
 
 const parser = new XMLParser({ ignoreAttributes: false, processEntities: true, removeNSPrefix: true });
@@ -86,12 +86,15 @@ export async function getNews(fetcher = fetch, { force = false } = {}) {
         const { source, feed } = tasks[cursor++];
         try {
           const r = await fetcher(feed.url, { headers: { 'User-Agent': 'Brujula/2.0 (RSS news reader)', Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml', 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(8000) });
-          if (!r.ok) throw new Error('RSS unavailable');
+          if (!r.ok) throw new Error('RSS HTTP ' + r.status);
           const xml = await r.text();
           if (xml.length > 3_000_000) throw new Error('Feed too large');
           const items = parseFeed(xml, { ...source, category: feed.category });
           results.push({ source: source.id, available: true, items });
-        } catch { results.push({ source: source.id, available: false, items: [] }); }
+        } catch (error) {
+          console.warn('RSS fetch failed:', source.id, error instanceof Error ? error.message : 'Unknown error');
+          results.push({ source: source.id, available: false, items: [] });
+        }
       }
     }));
     const unique = new Map();
