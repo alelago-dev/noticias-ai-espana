@@ -3,6 +3,7 @@ import { synthesize } from './ai.js';
 import { writeBroadcast, buildClips, llmAvailable } from './broadcast.js';
 import { ttsAvailable, synthesizeSpeech, verifyClip, VOICE_NAMES, MAX_CLIP_CHARS } from './tts.js';
 import { selectBulletin } from '../public/bulletin.js';
+import { getMusicAnniversaries, filterAnniversaries } from './music-anniversaries.js';
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 const buckets = new Map(), speechBuckets = new Map();
@@ -25,6 +26,14 @@ async function body(request) {
 
 export async function api(request, env = {}) {
   const path = new URL(request.url).pathname;
+  if (path === '/api/music-anniversaries') {
+    if (request.method !== 'GET') return json({ error: 'Método no permitido.' }, 405);
+    const params = new URL(request.url).searchParams;
+    const era = params.get('era') || 'all', kind = params.get('kind') || 'all';
+    if (!['all', '80s'].includes(era) || !['all', 'events', 'births', 'deaths'].includes(kind)) return json({ error: 'El filtro de efemérides no es válido.' }, 400);
+    const data = await getMusicAnniversaries();
+    return json({ ...data, items: filterAnniversaries(data.items, { era, kind }) }, data.available ? 200 : 503);
+  }
   if (path === '/api/config' && request.method === 'GET') return json({ categories: categories.map(c => ({ ...c, topics: c.topics.map(({ id, name }) => ({ id, name })) })), regions: regions.map(({ id, name }) => ({ id, name })), sources: sources.map(({ id, name, color, site }) => ({ id, name, color, site })), aiAvailable: llmAvailable(env), audioAvailable: ttsAvailable(env), audioVoices: ttsAvailable(env) ? Object.values(VOICE_NAMES) : [] });
   if (path === '/api/news' && request.method === 'GET') {
     const news = await getNews(fetch, { force: new URL(request.url).searchParams.get('refresh') === '1' });

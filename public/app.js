@@ -2,6 +2,7 @@ import { personalize, normalizeProfile, normalizeText } from './personalization.
 import { selectBulletin } from './bulletin.js';
 import { NewsPlayer } from './audio-player.js';
 import { ClipPlayer } from './clip-player.js';
+import { mountMusicAnniversaries } from './anniversaries.js';
 import { NewsMusic, musicPreferences, MUSIC_REVISION } from './news-music.js';
 import { narratorFor, resolveNarrators, voiceKey, bulletinStory, storyNarration } from './narration.js';
 const $ = selector => document.querySelector(selector);
@@ -442,3 +443,7 @@ async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 init();
+const musicAnniversaries = mountMusicAnniversaries({ request, escapeHTML: esc, safeURL });
+$('#refresh').addEventListener('click', () => musicAnniversaries.refresh());
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') musicAnniversaries.refreshIfNewDay(); });
+setInterval(() => { if (document.visibilityState === 'visible') musicAnniversaries.refreshIfNewDay(); }, 60000);
