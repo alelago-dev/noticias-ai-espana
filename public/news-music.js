@@ -1,11 +1,11 @@
 // Original instrumental news bed, composed locally. No external audio or licensing.
-// Radio bulletin bed: a clear clock-like pulse, bass, light percussion and arpeggios.
-export const MUSIC_REVISION = 2;
-export const MUSIC_DEFAULT_VOLUME = 30;
+// Broadcast theme: brass accents, a driving clock pulse and newsroom percussion.
+export const MUSIC_REVISION = 3;
+export const MUSIC_DEFAULT_VOLUME = 38;
 export function musicPreferences(input) {
   const validVolume = Number.isFinite(input?.volume);
   const previous = validVolume ? Math.max(0, Math.min(100, input.volume)) : MUSIC_DEFAULT_VOLUME;
-  return { enabled: input?.enabled !== false, volume: validVolume && input?.revision !== MUSIC_REVISION && previous > 0 ? Math.min(100, previous + 12) : previous, revision: MUSIC_REVISION };
+  return { enabled: input?.enabled !== false, volume: validVolume && input?.revision !== MUSIC_REVISION && previous > 0 ? Math.min(100, previous + 8) : previous, revision: MUSIC_REVISION };
 }
 export class NewsMusic {
   constructor({ enabled = true, volume = MUSIC_DEFAULT_VOLUME } = {}) {
@@ -18,7 +18,11 @@ export class NewsMusic {
     if (!Context) return false;
     if (!this.context) {
       this.context = new Context(); this.output = this.context.createGain();
-      this.output.gain.value = 0; this.output.connect(this.context.destination);
+      this.output.gain.value = 0;
+      this.limiter = this.context.createDynamicsCompressor();
+      this.limiter.threshold.value = -8; this.limiter.knee.value = 6;
+      this.limiter.ratio.value = 8; this.limiter.attack.value = .003; this.limiter.release.value = .12;
+      this.output.connect(this.limiter); this.limiter.connect(this.context.destination);
       this.noiseBuffer = this.context.createBuffer(1, this.context.sampleRate, this.context.sampleRate);
       const data = this.noiseBuffer.getChannelData(0);
       let seed = 20261011;
@@ -47,24 +51,55 @@ export class NewsMusic {
     source.onended = () => { this.nodes.delete(source); source.disconnect(); filter.disconnect(); gain.disconnect(); };
     source.start(time); source.stop(time + duration + .02);
   }
+  brass(midi, time, duration, amplitude) {
+    const ctx = this.context, oscillator = ctx.createOscillator(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
+    oscillator.type = 'sawtooth'; oscillator.frequency.value = 440 * 2 ** ((midi - 69) / 12);
+    filter.type = 'lowpass'; filter.Q.value = .7;
+    filter.frequency.setValueAtTime(700, time);
+    filter.frequency.linearRampToValueAtTime(2400, time + .025);
+    filter.frequency.exponentialRampToValueAtTime(650, time + duration);
+    gain.gain.setValueAtTime(0, time); gain.gain.linearRampToValueAtTime(amplitude, time + .025);
+    gain.gain.exponentialRampToValueAtTime(.0001, time + duration);
+    oscillator.connect(filter); filter.connect(gain); gain.connect(this.output); this.nodes.add(oscillator);
+    oscillator.onended = () => { this.nodes.delete(oscillator); oscillator.disconnect(); filter.disconnect(); gain.disconnect(); };
+    oscillator.start(time); oscillator.stop(time + duration + .02);
+  }
+  drum(time, amplitude, frequency = 115, duration = .16) {
+    const ctx = this.context, oscillator = ctx.createOscillator(), gain = ctx.createGain();
+    oscillator.frequency.setValueAtTime(frequency, time);
+    oscillator.frequency.exponentialRampToValueAtTime(45, time + duration);
+    gain.gain.setValueAtTime(amplitude, time); gain.gain.exponentialRampToValueAtTime(.0001, time + duration);
+    oscillator.connect(gain); gain.connect(this.output); this.nodes.add(oscillator);
+    oscillator.onended = () => { this.nodes.delete(oscillator); oscillator.disconnect(); gain.disconnect(); };
+    oscillator.start(time); oscillator.stop(time + duration + .02);
+  }
   schedule() {
     if (!this.playing || !this.enabled) return;
     const chords = [[50, 53, 57], [46, 50, 53], [41, 45, 48], [48, 52, 55]];
-    const eighth = 60 / 112 / 2;
-    const arpeggio = [0, 1, 2, 1, 0, 2, 1, 2];
+    const sixteenth = 60 / 126 / 4;
+    const ostinato = [0, 2, 1, 2, 0, 2, 1, 2];
     while (this.nextTime < this.context.currentTime + .2) {
-      const chord = chords[Math.floor(this.step / 16) % chords.length];
-      if (this.step % 16 === 0) {
-        chord.forEach(note => this.tone(note, this.nextTime, eighth * 15.8, .038, 'sine', .08));
+      const chord = chords[Math.floor(this.step / 32) % chords.length], beat = this.step % 16;
+      // Short brass chords replace the sustained, ambient pad.
+      if (beat === 0 || beat === 10) {
+        chord.forEach(note => this.brass(note + 12, this.nextTime, sixteenth * (beat === 0 ? 3.3 : 1.5), beat === 0 ? .019 : .012));
       }
-      this.tone(chord[arpeggio[this.step % 8]] + 12, this.nextTime, eighth * .8, this.step % 2 === 0 ? .045 : .025, 'triangle', .01);
+      // A brief four-note opening signature, then a quieter continuous pulse.
+      if (this.step < 32 && this.step % 4 === 0) {
+        const motif = [74, 69, 72, 74, 77, 76, 72, 74];
+        this.brass(motif[Math.floor(this.step / 4)], this.nextTime, sixteenth * 3.2, .024);
+      }
       if (this.step % 2 === 0) {
-        this.tone(chord[0] - 12, this.nextTime, eighth * 1.65, .075, 'triangle', .012);
-        this.tone(36, this.nextTime, .11, this.step % 8 === 0 ? .06 : .035, 'sine', .005);
+        this.tone(chord[ostinato[Math.floor(this.step / 2) % 8]] + 24, this.nextTime, sixteenth * 1.3, beat % 4 === 0 ? .027 : .017, 'triangle', .004);
       }
-      this.percussion(this.nextTime, .045, this.step % 2 === 0 ? .014 : .009);
-      if (this.step % 8 === 2 || this.step % 8 === 6) this.percussion(this.nextTime, .1, .025, true);
-      this.step++; this.nextTime += eighth;
+      if (beat % 4 === 0 || beat === 14) {
+        this.tone(chord[0] - 12, this.nextTime, sixteenth * 2.5, .07, 'triangle', .005);
+        this.drum(this.nextTime, beat === 0 ? .08 : .055);
+      }
+      this.percussion(this.nextTime, .035, beat % 4 === 0 ? .014 : .007);
+      if (beat === 4 || beat === 12) this.percussion(this.nextTime, .12, .046, true);
+      if (this.step % 64 >= 60 && this.step % 2 === 0) this.drum(this.nextTime, .035, this.step % 64 === 60 ? 190 : 145, .12);
+      this.step++; this.nextTime += sixteenth;
     }
   }
   mix() {
