@@ -2,6 +2,7 @@ import { personalize, normalizeProfile, normalizeText } from './personalization.
 import { selectBulletin } from './bulletin.js';
 import { NewsPlayer } from './audio-player.js';
 import { NewsMusic } from './news-music.js';
+import { narratorFor, resolveNarrators, voiceKey, spokenText } from './narration.js';
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const defaults = { espana: 2, politica: 2, economia: 2, tecnologia: 3, internacional: 1, deportes: 0, ciencia: 1, cultura: 0, musica: 0, salud: 0, medioambiente: 0, sociedad: 0, educacion: 0 };
@@ -239,8 +240,11 @@ $('#regenerate').onclick = createEdition;
 
 const musicSettings = stored('brujula-music', { enabled: true, volume: 18 });
 const music = new NewsMusic({ enabled: musicSettings?.enabled !== false, volume: Number.isFinite(musicSettings?.volume) ? musicSettings.volume : 18 });
+const savedNarration = stored('brujula-narration', {});
+let narration = { mode: ['alternating', 'female', 'male'].includes(savedNarration?.mode) ? savedNarration.mode : 'alternating', female: typeof savedNarration?.female === 'string' ? savedNarration.female : '', male: typeof savedNarration?.male === 'string' ? savedNarration.male : '' };
 const newsPlayer = 'speechSynthesis' in window ? new NewsPlayer({
   engine: window.speechSynthesis,
+  chooseVoice: (index, voices) => narratorFor(index, voices, narration),
   makeUtterance: text => new SpeechSynthesisUtterance(text),
   onChange: updatePlayer,
   onError: () => { closeSpeech(); toast('La voz de tu dispositivo no está disponible. Puedes leer la edición.'); },
@@ -258,7 +262,8 @@ function updatePlayer(state) {
   const current = playerEdition?.paragraphs[state.index];
   const article = playerEdition?.articles.find(a => current?.sourceIds.includes(a.id));
   $('#player-title').textContent = article?.title || 'Tu informativo Brújula';
-  $('#player-label').textContent = finished ? 'Edición terminada' : 'Noticia ' + (state.index + 1) + ' de ' + state.count + (state.status === 'paused' ? ' · En pausa' : '');
+  $('#player-label').textContent = state.previewing ? 'Probando voz · Informativo en pausa' : finished ? 'Edición terminada' : 'Noticia ' + (state.index + 1) + ' de ' + state.count + (state.voiceName ? ' · ' + state.voiceName : '') + (state.status === 'paused' ? ' · En pausa' : '');
+  $('#voice-preview-status').textContent = state.previewing ? 'Escuchando la prueba. El informativo queda en pausa.' : '';
   $('#player-toggle').textContent = playing ? 'Ⅱ' : '▶';
   $('#player-toggle').setAttribute('aria-label', playing ? 'Pausar audio' : finished ? 'Volver a escuchar' : 'Continuar audio');
   $('#player-next').disabled = finished || !state.count;
@@ -278,8 +283,8 @@ function startSpeech(index) {
   if (playerEdition !== edition) {
     newsPlayer.load(edition.paragraphs.map((p, i) => {
       const names = [...new Set(p.sourceIds.map(id => edition.articles.find(a => a.id === id)?.sourceName).filter(Boolean))];
-      const opening = i === 0 ? 'Brújula. Informativo de ' + scopeName(edition.scope) + '. Noticias de las últimas ' + (edition.hours || profile.hours) + ' horas. ' : '';
-      return opening + 'Según ' + names.join(' y ') + '. ' + p.text;
+      const opening = i === 0 ? 'Brújula, informativo de ' + scopeName(edition.scope) + '. Noticias de las últimas ' + (edition.hours || profile.hours) + ' horas. ' : '';
+      return spokenText(opening + 'Según ' + names.join(' y ') + ', ' + p.text);
     }));
     playerEdition = edition;
   }
@@ -299,9 +304,39 @@ $('#player-music').onclick = () => {
 };
 $('#music-volume').oninput = e => { music.setVolume(e.target.value); saveLocal('brujula-music', { enabled: music.enabled, volume: music.volume }); updateMusicControls(); };
 $('#player-close').onclick = closeSpeech;
+$('#player-voices').onclick = () => { navigate('edition'); $('#voice-settings').open = true; $('#voice-settings').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 document.addEventListener('click', e => { const b = e.target.closest('[data-listen-story]'); if (b) startSpeech(Number(b.dataset.listenStory)); });
 window.addEventListener('pagehide', closeSpeech);
 updateMusicControls();
+function renderNarration() {
+  const pair = resolveNarrators(window.speechSynthesis?.getVoices() || [], narration);
+  $('#voice-settings summary span').textContent = narration.mode === 'female' ? 'Solo presentadora' : narration.mode === 'male' ? 'Solo presentador' : pair.distinct ? 'Presentadora + presentador' : pair.available.length === 1 ? 'Una voz disponible' : 'Elegir las dos voces';
+  $('#narration-mode').value = narration.mode;
+  for (const role of ['female', 'male']) {
+    const resolved = pair[role];
+    $('#voice-' + role).innerHTML = '<option value="">Automática' + (resolved ? ' · ' + esc(resolved.name) : '') + '</option>' + pair.available.map(v => '<option value="' + esc(voiceKey(v)) + '">' + esc(v.name) + ' · ' + esc(v.lang) + '</option>').join('');
+    $('#voice-' + role).value = pair.available.some(v => voiceKey(v) === narration[role]) ? narration[role] : '';
+    $('#voice-' + role).disabled = !pair.available.length;
+    $('#preview-' + role).disabled = !newsPlayer || !(pair[role] || pair.fallback);
+  }
+  $('#voice-status').textContent = !newsPlayer ? 'Este navegador no admite lectura en voz alta.' : !pair.available.length ? 'El navegador todavía no ofrece voces en español. Usaremos su voz por defecto hasta que estén disponibles.' : pair.distinct ? (narration.mode === 'alternating' ? 'Dos voces elegidas: se alternan entre noticias completas, empezando por la presentadora.' : 'Se usará la voz elegida para todas las noticias.') : pair.available.length === 1 ? 'Tu navegador ofrece una sola voz en español: se usará para ambas. Para alternar, necesitas que el dispositivo ofrezca dos voces.' : 'El navegador no identifica una pareja automáticamente. Escucha las pruebas y elige una voz para cada presentador.';
+}
+function updateNarration() {
+  narration = { mode: $('#narration-mode').value, female: $('#voice-female').value, male: $('#voice-male').value };
+  saveLocal('brujula-narration', narration); renderNarration();
+  if (newsPlayer?.status === 'playing' || newsPlayer?.status === 'paused') toast('Las nuevas voces se aplicarán desde la próxima noticia.');
+}
+$('#narration-mode').onchange = updateNarration;
+$('#voice-female').onchange = updateNarration;
+$('#voice-male').onchange = updateNarration;
+for (const role of ['female', 'male']) $('#preview-' + role).onclick = () => {
+  const pair = resolveNarrators(window.speechSynthesis?.getVoices() || [], narration);
+  const voice = pair[role] || pair.fallback;
+  if (!voice || !newsPlayer) return;
+  music.pause(); newsPlayer.preview('Buenos días. Este es tu informativo Brújula. Te contamos las noticias de las últimas horas, con sus fuentes.', voice);
+};
+window.speechSynthesis?.addEventListener('voiceschanged', renderNarration);
+renderNarration();
 
 async function ask(question) {
   if (chatBusy || question.trim().length < 3) return;
