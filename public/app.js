@@ -1,7 +1,7 @@
 import { personalize, normalizeProfile, normalizeText } from './personalization.js';
 import { selectBulletin } from './bulletin.js';
 import { NewsPlayer } from './audio-player.js';
-import { NewsMusic } from './news-music.js';
+import { NewsMusic, musicPreferences, MUSIC_REVISION } from './news-music.js';
 import { narratorFor, resolveNarrators, voiceKey, spokenText } from './narration.js';
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -238,8 +238,9 @@ $('#create-edition').onclick = () => {
 };
 $('#regenerate').onclick = createEdition;
 
-const musicSettings = stored('brujula-music', { enabled: true, volume: 18 });
-const music = new NewsMusic({ enabled: musicSettings?.enabled !== false, volume: Number.isFinite(musicSettings?.volume) ? musicSettings.volume : 18 });
+const musicSettings = musicPreferences(stored('brujula-music', null));
+const music = new NewsMusic(musicSettings);
+saveLocal('brujula-music', musicSettings);
 const savedNarration = stored('brujula-narration', {});
 let narration = { mode: ['alternating', 'female', 'male'].includes(savedNarration?.mode) ? savedNarration.mode : 'alternating', female: typeof savedNarration?.female === 'string' ? savedNarration.female : '', male: typeof savedNarration?.male === 'string' ? savedNarration.male : '' };
 const newsPlayer = 'speechSynthesis' in window ? new NewsPlayer({
@@ -300,9 +301,9 @@ $('#player-speed').onchange = () => { newsPlayer?.setRate(Number($('#player-spee
 $('#player-music').onclick = () => {
   music.setEnabled(!music.enabled);
   if (music.enabled && newsPlayer?.status === 'playing') music.start();
-  saveLocal('brujula-music', { enabled: music.enabled, volume: music.volume }); updateMusicControls();
+  saveLocal('brujula-music', { enabled: music.enabled, volume: music.volume, revision: MUSIC_REVISION }); updateMusicControls();
 };
-$('#music-volume').oninput = e => { music.setVolume(e.target.value); saveLocal('brujula-music', { enabled: music.enabled, volume: music.volume }); updateMusicControls(); };
+$('#music-volume').oninput = e => { music.setVolume(e.target.value); saveLocal('brujula-music', { enabled: music.enabled, volume: music.volume, revision: MUSIC_REVISION }); updateMusicControls(); };
 $('#player-close').onclick = closeSpeech;
 $('#player-voices').onclick = () => { navigate('edition'); $('#voice-settings').open = true; $('#voice-settings').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 document.addEventListener('click', e => { const b = e.target.closest('[data-listen-story]'); if (b) startSpeech(Number(b.dataset.listenStory)); });

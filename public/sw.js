@@ -1,4 +1,4 @@
-const CACHE = 'brujula-shell-v5';
+const CACHE = 'brujula-shell-v6';
 const SHELL = ['/', '/style.css', '/app.js', '/personalization.js', '/bulletin.js', '/audio-player.js', '/news-music.js', '/narration.js', '/icons.js', '/icon.svg', '/icon-192.png', '/icon-512.png', '/manifest.webmanifest'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))); self.clients.claim(); });
