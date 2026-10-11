@@ -1,4 +1,5 @@
 import { personalize, normalizeProfile, normalizeText } from './personalization.js';
+import { selectBulletin } from './bulletin.js';
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const defaults = { espana: 2, politica: 2, economia: 2, tecnologia: 3, internacional: 1, deportes: 0, ciencia: 1, cultura: 0, musica: 0, salud: 0, medioambiente: 0, sociedad: 0, educacion: 0 };
@@ -15,6 +16,11 @@ let news = { articles: [], sources: [] };
 let filter = 'all', view = 'home', displayLimit = 9, edition = null, editionBusy = false, chatBusy = false, loadError = null;
 let speechIndex = 0, speechPlaying = false, speechGeneration = 0, speechUtterance = null;
 let installPrompt = null, toastTimer;
+const storedBulletin = stored('brujula-bulletin', {});
+let bulletinScope = ['espana', 'mundo', 'personal'].includes(storedBulletin?.scope) ? storedBulletin.scope : 'espana';
+let bulletinHours = [6, 12, 24].includes(storedBulletin?.hours) ? storedBulletin.hours : 12;
+let morningEdition = null;
+const scopeName = scope => ({ espana: 'España', mundo: 'Mundo', personal: 'Mis temas' })[scope] || 'Mis temas';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 function safeURL(value) { try { const u = new URL(value); return u.protocol === 'https:' ? u.href : '#'; } catch { return '#'; } }
@@ -38,6 +44,7 @@ function navigate(next, updateHash = true) {
   $$('[data-view]').forEach(el => { el.classList.toggle('active', el.dataset.view === next); if (el.closest('nav')) el.setAttribute('aria-current', el.dataset.view === next ? 'page' : 'false'); });
   if (updateHash) history.replaceState(null, '', '#' + next);
   if (next === 'saved') renderSaved();
+  if (next === 'edition' && !edition && morningEdition) { edition = morningEdition; renderEdition(); }
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 document.addEventListener('click', e => { const button = e.target.closest('[data-view]'); if (button) navigate(button.dataset.view); });
@@ -142,9 +149,9 @@ $('#save-preferences').onclick = () => {
   preferences = { ...draftPreferences }; profile = normalizeProfile(draftProfile);
   saveLocal('brujula-interests', preferences); saveLocal('brujula-profile', profile);
   draftProfile = normalizeProfile(profile);
-  filter = 'all'; displayLimit = 9; edition = null; closeSpeech();
+  filter = 'all'; displayLimit = 9; edition = null; closeSpeech(); prepareMorning();
   $('#edition-content').innerHTML = empty('Tu selección ha cambiado.', 'Prepara una nueva edición con tus intereses actualizados.');
-  renderInterests(); renderFeed(); updateSaveStatus(); toast('Tus temas ya marcan el rumbo del feed y del informativo.'); navigate('home');
+  renderInterests(); renderFeed(); updateSaveStatus(); toast('Tus intereses se aplican al feed y a la edición Mis temas.'); navigate('home');
 };
 $('#search').addEventListener('input', () => { displayLimit = 9; renderFeed(); });
 $('#sort').onchange = renderFeed;
@@ -171,7 +178,7 @@ async function loadNews(force = false) {
   if (!news.articles.length) $('#feed').innerHTML = '<div class="skeleton"></div>'.repeat(3);
   try { news = await request('/api/news' + (force === true ? '?refresh=1' : '')); loadError = null; }
   catch (error) { loadError = error.message; }
-  renderFeed(); renderSources(); $('#refresh').disabled = false;
+  renderFeed(); renderSources(); prepareMorning(); $('#refresh').disabled = false;
 }
 $('#refresh').onclick = () => loadNews(true);
 setInterval(() => { if (document.visibilityState === 'visible') loadNews(); }, 120000);
@@ -180,24 +187,52 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function citations(paragraph, articles) {
   return `<div class="citations">${paragraph.sourceIds.map(id => articles.find(a => a.id === id)).filter(Boolean).map(a => `<a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer" title="${esc(a.title)}">${esc(a.sourceName)} · ${esc(a.title.slice(0, 65))}${a.title.length > 65 ? '…' : ''} ↗</a>`).join('')}</div>`;
 }
+function prepareMorning() {
+  const length = $('#bulletin-length').value;
+  const limit = length === 'short' ? 6 : length === 'long' ? 20 : 12;
+  const articles = loadError ? [] : selectBulletin(news.articles, { scope: bulletinScope, hours: bulletinHours, limit, preferences, profile });
+  const paragraphs = articles.map(a => ({ text: a.title + (a.excerpt && !a.excerpt.startsWith(a.title) ? '. ' + a.excerpt : ''), sourceIds: [a.id] }));
+  morningEdition = paragraphs.length ? { mode: 'extractive', scope: bulletinScope, hours: bulletinHours, articles, paragraphs, updatedAt: news.updatedAt, estimatedSeconds: Math.max(1, Math.round(paragraphs.map(p => p.text).join(' ').split(/\s+/).length / 2.5)) } : null;
+  $('#create-edition').disabled = !morningEdition;
+  $$('[data-scope]').forEach(b => { const active = b.dataset.scope === bulletinScope; b.classList.toggle('active', active); b.setAttribute('aria-pressed', active); });
+  const clock = news.updatedAt ? new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(news.updatedAt)) : '';
+  $('#bulletin-meta').textContent = morningEdition ? articles.length + (articles.length === 1 ? ' noticia · ' : ' noticias · ') + Math.ceil(morningEdition.estimatedSeconds / 60) + ' min aprox. · ' + new Set(articles.map(a => a.source)).size + (new Set(articles.map(a => a.source)).size === 1 ? ' medio · Comprobado ' : ' medios · Comprobado ') + clock : loadError ? 'No se pueden actualizar las noticias. Pulsa Actualizar para reintentar.' : 'No hay noticias en este intervalo. Prueba 24 horas u otro ámbito.';
+}
+$('#bulletin-hours').value = bulletinHours;
+function updateBulletin() {
+  bulletinHours = Number($('#bulletin-hours').value);
+  $('#edition-length').value = $('#bulletin-length').value;
+  saveLocal('brujula-bulletin', { scope: bulletinScope, hours: bulletinHours });
+  prepareMorning();
+}
+$('#bulletin-scopes').onclick = e => { const b = e.target.closest('[data-scope]'); if (b) { bulletinScope = b.dataset.scope; updateBulletin(); } };
+$('#bulletin-hours').onchange = updateBulletin;
+$('#bulletin-length').onchange = updateBulletin;
 function renderEdition() {
   if (!edition) return;
   const min = Math.ceil(edition.estimatedSeconds / 60);
   const mode = edition.mode === 'ai' ? 'Resumen con IA · Revisa las fuentes' : 'Selección de titulares y extractos RSS';
   const time = new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(edition.updatedAt));
-  $('#edition-content').innerHTML = `<div class="edition-header"><div><div class="eyebrow">UNA EDICIÓN PARA TI</div><h2>Este es tu rumbo de hoy.</h2><p>${min} min aprox. · ${edition.articles.length} noticias · ${new Set(edition.articles.map(a => a.source)).size} medios<br>Actualizado a las ${time} · Hora de Madrid</p></div><button id="listen-edition" class="primary-button"><span>▶</span> Escuchar edición</button></div><p class="edition-notice">${esc(mode)}. ${esc(edition.notice || 'La duración depende del contenido disponible. La voz la proporciona tu dispositivo.')} ${edition.mode === 'extractive' ? 'La síntesis redactada con IA está pendiente de activación.' : ''}</p><div class="transcript">${edition.paragraphs.map((p, i) => `<section class="transcript-section" id="paragraph-${i}"><p>${esc(p.text)}</p>${citations(p, edition.articles)}</section>`).join('')}</div>`;
+  $('#edition-content').innerHTML = `<div class="edition-header"><div><div class="eyebrow">${esc(scopeName(edition.scope))} · ÚLTIMAS ${edition.hours || profile.hours} HORAS</div><h2>Lo que ha pasado, a tu alcance.</h2><p>${min} min aprox. · ${edition.articles.length} noticias · ${new Set(edition.articles.map(a => a.source)).size} medios<br>Fuentes comprobadas a las ${time} · Hora de Madrid</p></div><button id="listen-edition" class="primary-button"><span>▶</span> Escuchar edición</button></div><p class="edition-notice">${esc(mode)}. ${esc(edition.notice || 'La duración depende del contenido disponible. La voz la proporciona tu dispositivo.')} ${edition.mode === 'extractive' ? 'La síntesis redactada con IA está pendiente de activación.' : ''}</p><p class="edition-notice">${edition.scope === 'personal' ? 'Selección según tus intereses.' : 'Selección automática por actualidad, coincidencia de titulares entre medios y variedad de temas. La clasificación geográfica puede contener errores.'} La escucha con la pantalla bloqueada depende del navegador.</p><div class="transcript">${edition.paragraphs.map((p, i) => `<section class="transcript-section" id="paragraph-${i}"><p>${esc(p.text)}</p>${citations(p, edition.articles)}</section>`).join('')}</div>`;
   $('#listen-edition').onclick = () => startSpeech(0);
 }
 async function createEdition() {
   if (editionBusy) return;
+  const scope = bulletinScope, hours = bulletinHours;
   navigate('edition'); editionBusy = true; $('#regenerate').disabled = true;
-  $('#edition-content').innerHTML = empty('Preparando tu edición…', 'Seleccionamos las noticias de tus temas y conservamos sus fuentes.');
-  closeSpeech();
-  try { edition = await request('/api/edition', { preferences, profile, length: $('#edition-length').value }); renderEdition(); }
+  $('#edition-content').innerHTML = empty('Preparando tu edición…', 'Seleccionamos noticias recientes de ' + scopeName(bulletinScope) + ' y conservamos sus fuentes.');
+  closeSpeech(); edition = null;
+  try { const result = await request('/api/edition', { preferences, profile, scope, hours, length: $('#edition-length').value }); edition = { ...result, scope, hours }; renderEdition(); }
   catch (error) { $('#edition-content').innerHTML = `<div class="empty-state error-state"><span>✳</span><h2>No hemos podido preparar la edición.</h2><p>${esc(error.message)}</p><button class="outline-button" data-view="preferences">Revisar mis intereses ↗</button></div>`; }
   finally { editionBusy = false; $('#regenerate').disabled = false; }
 }
-$('#create-edition').onclick = createEdition;
+$('#create-edition').onclick = () => {
+  prepareMorning();
+  if (!morningEdition) return;
+  // Already prepared: speech begins within the tap gesture, including on mobile.
+  edition = morningEdition; $('#edition-length').value = $('#bulletin-length').value;
+  navigate('edition'); renderEdition(); startSpeech(0);
+};
 $('#regenerate').onclick = createEdition;
 
 function closeSpeech() {
@@ -214,7 +249,8 @@ function startSpeech(index) {
     const p = edition.paragraphs[speechIndex];
     if (!p) { speechPlaying = false; $('#player-toggle').textContent = '▶'; $('#player-toggle').setAttribute('aria-label', 'Volver a escuchar'); $('#player-label').textContent = 'Edición terminada'; $('#player-progress-fill').style.width = '100%'; return; }
     const names = [...new Set(p.sourceIds.map(id => edition.articles.find(a => a.id === id)?.sourceName).filter(Boolean))];
-    const utterance = new SpeechSynthesisUtterance('Según ' + names.join(' y ') + '. ' + p.text);
+    const opening = speechIndex === 0 ? 'Brújula. Informativo de ' + scopeName(edition.scope) + '. Noticias de las últimas ' + (edition.hours || profile.hours) + ' horas. ' : '';
+    const utterance = new SpeechSynthesisUtterance(opening + 'Según ' + names.join(' y ') + '. ' + p.text);
     speechUtterance = utterance; utterance.lang = 'es-ES'; utterance.rate = Number($('#player-speed').value);
     const voices = window.speechSynthesis.getVoices(); utterance.voice = voices.find(v => v.lang === 'es-ES') || voices.find(v => v.lang.startsWith('es')) || null;
     utterance.onstart = () => { if (token !== speechGeneration) return; speechPlaying = true; $('#player-toggle').textContent = 'Ⅱ'; $('#player-toggle').setAttribute('aria-label', 'Pausar audio'); $('#player-label').textContent = 'Noticia ' + (speechIndex + 1) + ' de ' + edition.paragraphs.length; $('#player-progress-fill').style.width = speechIndex / edition.paragraphs.length * 100 + '%'; };
@@ -266,7 +302,7 @@ async function init() {
     renderInterests(); renderProfileControls(); renderSources();
     $('#ai-status').textContent = config.aiAvailable ? 'Respuestas con IA basadas en extractos RSS. Comprueba siempre las fuentes.' : 'Modo fuentes activo. La respuesta redactada con IA está pendiente de activación.';
     await loadNews();
-  } catch { loadError = 'No se puede conectar con Brújula. Comprueba tu conexión y vuelve a cargar la página.'; renderFeed(); $('#ai-status').textContent = 'Sin conexión. Vuelve a intentarlo cuando recuperes el acceso a internet.'; }
+  } catch { loadError = 'No se puede conectar con Brújula. Comprueba tu conexión y vuelve a cargar la página.'; renderFeed(); prepareMorning(); $('#ai-status').textContent = 'Sin conexión. Vuelve a intentarlo cuando recuperes el acceso a internet.'; }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 init();

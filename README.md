@@ -1,13 +1,16 @@
 # Brújula
 
-Una app web instalable para móvil que organiza noticias de medios españoles según tus intereses, prepara una edición para leer o escuchar y enlaza siempre al periodismo original.
+Una app web instalable para móvil: abrir al salir y escuchar las noticias principales de las últimas horas de España o del mundo, con enlaces al periodismo original y una edición opcional según tus intereses.
 
 ## Qué puedes hacer
+
+- Escuchar desde el inicio con un toque: la selección extractiva se prepara al cargar las noticias, sin iniciar audio automáticamente.
+- Elegir España, Mundo o Mis temas y las últimas 6, 12 o 24 horas (12 por defecto en el informativo). No se rellena una ventana vacía con noticias antiguas.
 
 - Elegir entre 13 categorías, asignar cuatro niveles de interés y seleccionar hasta cinco subtemas por categoría (89 subtemas disponibles).
 - Consultar noticias recientes de EL PAÍS, ABC, elDiario.es, Europa Press, Xataka, EL MUNDO, 20minutos, La Vanguardia, El Confidencial y EL ESPAÑOL mediante 15 RSS generales y temáticos.
 - Priorizar una comunidad autónoma o municipio, añadir hasta diez intereses propios y elegir los medios incluidos.
-- Usar una ventana de 6, 12, 24 o 48 horas, con 24 horas por defecto.
+- Usar una ventana de 6, 12, 24 o 48 horas en el feed personalizado, con 24 horas por defecto.
 - Activar «solo mis subtemas» para excluir otros subtemas dentro de las categorías afinadas.
 - Buscar titulares, filtrar por tema, ordenar por fecha y guardar noticias en tu dispositivo.
 - Preparar una edición breve, habitual o ampliada con referencias a cada fuente.
@@ -53,7 +56,7 @@ La app requiere internet para cargar noticias. El service worker conserva la int
 - Solo canales RSS públicos. No se sortean paywalls ni se descargan artículos completos.
 - La recogida conserva publicaciones de hasta 48 horas. La selección muestra las últimas 24 horas por defecto (configurable a 6, 12 o 48); descarta fechas desconocidas, futuras y enlaces fuera del dominio de la fuente.
 - Las categorías y subtemas se asignan con coincidencias de palabras completas y expresiones de títulos, etiquetas y extractos. Las noticias pueden pertenecer a varias categorías; la clasificación puede equivocarse. La ubicación prioriza menciones del lugar en el texto, no identifica el lugar exacto de un acontecimiento.
-- Feed y boletín comparten el mismo algoritmo de intereses, subtemas, localidad, temas propios y exclusión de medios. La actualidad separa las noticias de hasta 12 horas, 12–24 horas y 24–48 horas para evitar que una noticia antigua adelante a una nueva solo por afinidad. Dentro de cada grupo, el orden combina afinidad, edad y variedad de medios. El boletín limita las noticias de una sola fuente. No afirma haber contrastado de forma independiente todos los acontecimientos.
+- Feed y edición «Mis temas» comparten el algoritmo de intereses, subtemas, localidad, temas propios y exclusión de medios. Las ediciones generales España/Mundo no dependen de los intereses: ordenan por recencia, cobertura de titulares similares entre medios, posición en los canales y variedad de temas y medios. Agrupan titulares similares para evitar repeticiones sin combinar afirmaciones. La relevancia es una aproximación automática, no un juicio editorial ni una verificación. La distinción España/Mundo usa secciones, etiquetas y menciones geográficas; puede equivocarse. Las exclusiones de medios se respetan en todas las ediciones. La actualidad separa las noticias de hasta 12 horas, 12–24 horas y 24–48 horas para evitar que una noticia antigua adelante a una nueva solo por afinidad. Dentro de cada grupo, el orden combina afinidad, edad y variedad de medios. El boletín limita las noticias de una sola fuente. No afirma haber contrastado de forma independiente todos los acontecimientos.
 - Los canales se comprueban con una caché de dos minutos. La app abierta y visible consulta novedades cada dos minutos y al volver del segundo plano; «Actualizar» fuerza la comprobación salvo una protección de 30 segundos entre consultas. No se garantiza publicación continua de todos los medios. Se muestra la fecha de su última publicación por separado de la hora de comprobación.
 - La duración es una estimación del texto disponible. No se amplía el contenido para aparentar 10 minutos.
 - Intereses, subtemas, zona y guardados se almacenan en el navegador. No hay cuenta ni sincronización entre dispositivos. Las consultas se envían al servidor y, cuando se activa la IA, al proveedor.

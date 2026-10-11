@@ -1,5 +1,6 @@
 import { categories, regions, sources, getNews, personalize, findEvidence } from './news.js';
 import { synthesize } from './ai.js';
+import { selectBulletin } from '../public/bulletin.js';
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 const buckets = new Map();
@@ -44,8 +45,9 @@ export async function api(request, env = {}) {
       if (!articles.length) return json({ mode: 'insufficient', paragraphs: [], articles: [], message: 'No encuentro fuentes suficientes en las noticias recientes para responder. Prueba con otro tema o consulta los medios originales.' });
     } else {
       const count = input.length === 'long' ? 20 : input.length === 'short' ? 6 : 12;
-      articles = personalize(news.articles, input.preferences, count, input.profile, { maxPerSource: 4 });
-      if (!articles.length) return json({ error: 'No hay noticias recientes de tus temas. Amplía tus intereses.' }, 422);
+      if (input.scope && !['espana', 'mundo', 'personal'].includes(input.scope)) return json({ error: 'El ámbito no es válido.' }, 400);
+      articles = input.scope ? selectBulletin(news.articles, { scope: input.scope, hours: input.hours, limit: count, preferences: input.preferences, profile: input.profile }) : personalize(news.articles, input.preferences, count, input.profile, { maxPerSource: 4 });
+      if (!articles.length) return json({ error: 'No hay noticias en este intervalo. Prueba las últimas 24 horas u otro ámbito.' }, 422);
     }
     const result = await synthesize(articles, env, input.question);
     const text = result.paragraphs.map(p => p.text).join('\n\n');

@@ -47,7 +47,7 @@ export function classify(text, fallback = 'espana') {
 export function parseFeed(xml, source, now = Date.now()) {
   const data = parser.parse(xml);
   const items = data.rss?.channel?.item ?? data.feed?.entry ?? [];
-  return (Array.isArray(items) ? items : [items]).flatMap((item) => {
+  return (Array.isArray(items) ? items : [items]).flatMap((item, feedPosition) => {
     const link = Array.isArray(item.link) ? item.link.find(x => x['@_rel'] === 'alternate')?.['@_href'] : item.link?.['@_href'] || item.link;
     const url = articleURL(link, source);
     const title = cleanText(item.title).slice(0, 300);
@@ -61,7 +61,12 @@ export function parseFeed(xml, source, now = Date.now()) {
     
     let hash = 2166136261;
     for (const c of url) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619);
-    return [annotateArticle({ id: source.id + '-' + (hash >>> 0).toString(36), title, excerpt, url, publishedAt: published.toISOString(), source: source.id, sourceName: source.name }, tags, source.category || 'espana')];
+    const article = annotateArticle({ id: source.id + '-' + (hash >>> 0).toString(36), title, excerpt, url, publishedAt: published.toISOString(), source: source.id, sourceName: source.name, feedPosition, generalFeed: !source.category }, tags, source.category || 'espana');
+    const internationalSection = /\/(internacional|international|mundo|world)(\/|-)/i.test(new URL(url).pathname) || /\b(internacional|mundo|international|world)\b/.test(normalizeText(tags));
+    const domesticSection = /\/(espana|politica|nacional|andalucia|madrid|catalunya|cataluna|comunidad-valenciana)(\/|-)/i.test(new URL(url).pathname);
+    const foreign = /\b(ucrania|rusia|israel|gaza|libano|iran|china|estados unidos|trump|zelenski|putin|netanyahu|francia|alemania|reino unido|portugal|argentina|brasil|mexico|venezuela)\b/.test(normalizeText(title));
+    article.coverage = internationalSection ? 'mundo' : domesticSection || article.regions.length ? 'espana' : article.category === 'internacional' || foreign ? 'mundo' : 'espana';
+    return [article];
   });
 }
 
@@ -89,13 +94,12 @@ export async function getNews(fetcher = fetch, { force = false } = {}) {
       }
     }));
     const unique = new Map();
-    for (const a of results.flatMap(r => r.items)) unique.set(a.url, a);
-    const titles = new Set();
-    const articles = [...unique.values()].sort((a, b) => +new Date(b.publishedAt) - +new Date(a.publishedAt)).filter(a => {
-      const title = normalizeText(a.title);
-      if (title.length >= 30 && titles.has(title)) return false;
-      titles.add(title); return true;
-    });
+    for (const a of results.flatMap(r => r.items)) {
+      const previous = unique.get(a.url);
+      if (!previous || a.generalFeed && !previous.generalFeed) unique.set(a.url, a);
+    }
+    // Preserve different publishers' coverage for the bulletin's shared-story ranking.
+    const articles = [...unique.values()].sort((a, b) => +new Date(b.publishedAt) - +new Date(a.publishedAt));
     const now = Date.now();
     const statuses = sources.map(s => {
       const feeds = results.filter(r => r.source === s.id);
