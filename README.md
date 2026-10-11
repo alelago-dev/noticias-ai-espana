@@ -14,7 +14,8 @@ Una app web instalable para móvil: abrir al salir y escuchar las noticias princ
 - Activar «solo mis subtemas» para excluir otros subtemas dentro de las categorías afinadas.
 - Buscar titulares, filtrar por tema, ordenar por fecha y guardar noticias en tu dispositivo.
 - Preparar una edición breve, habitual o ampliada con referencias a cada fuente.
-- Escuchar la edición con la síntesis de voz del navegador, pausar, cambiar de velocidad y avanzar entre noticias.
+- Escuchar la edición con la síntesis de voz del navegador, pausar, saltar noticias con un botón visible y volver a la anterior. El cambio de velocidad se aplica desde la siguiente frase sin reiniciar la noticia, también en voces móviles sin eventos de posición.
+- Activar o silenciar un fondo musical instrumental original, ajustar su volumen y conservar la preferencia en el dispositivo. La música se pausa y termina junto con la narración; no precisa archivos ni servicios externos.
 - Preguntar por las noticias y obtener fuentes relacionadas. Con la IA configurada, obtener respuestas y resúmenes con referencias.
 - Instalar la app en la pantalla de inicio en Android o iPhone.
 

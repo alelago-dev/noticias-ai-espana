@@ -1,5 +1,7 @@
 import { personalize, normalizeProfile, normalizeText } from './personalization.js';
 import { selectBulletin } from './bulletin.js';
+import { NewsPlayer } from './audio-player.js';
+import { NewsMusic } from './news-music.js';
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const defaults = { espana: 2, politica: 2, economia: 2, tecnologia: 3, internacional: 1, deportes: 0, ciencia: 1, cultura: 0, musica: 0, salud: 0, medioambiente: 0, sociedad: 0, educacion: 0 };
@@ -14,7 +16,7 @@ if (!Array.isArray(saved)) saved = [];
 let config = { categories: [], sources: [], aiAvailable: false };
 let news = { articles: [], sources: [] };
 let filter = 'all', view = 'home', displayLimit = 9, edition = null, editionBusy = false, chatBusy = false, loadError = null;
-let speechIndex = 0, speechPlaying = false, speechGeneration = 0, speechUtterance = null;
+let playerEdition = null;
 let installPrompt = null, toastTimer;
 const storedBulletin = stored('brujula-bulletin', {});
 let bulletinScope = ['espana', 'mundo', 'personal'].includes(storedBulletin?.scope) ? storedBulletin.scope : 'espana';
@@ -213,7 +215,7 @@ function renderEdition() {
   const min = Math.ceil(edition.estimatedSeconds / 60);
   const mode = edition.mode === 'ai' ? 'Resumen con IA · Revisa las fuentes' : 'Selección de titulares y extractos RSS';
   const time = new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(edition.updatedAt));
-  $('#edition-content').innerHTML = `<div class="edition-header"><div><div class="eyebrow">${esc(scopeName(edition.scope))} · ÚLTIMAS ${edition.hours || profile.hours} HORAS</div><h2>Lo que ha pasado, a tu alcance.</h2><p>${min} min aprox. · ${edition.articles.length} noticias · ${new Set(edition.articles.map(a => a.source)).size} medios<br>Fuentes comprobadas a las ${time} · Hora de Madrid</p></div><button id="listen-edition" class="primary-button"><span>▶</span> Escuchar edición</button></div><p class="edition-notice">${esc(mode)}. ${esc(edition.notice || 'La duración depende del contenido disponible. La voz la proporciona tu dispositivo.')} ${edition.mode === 'extractive' ? 'La síntesis redactada con IA está pendiente de activación.' : ''}</p><p class="edition-notice">${edition.scope === 'personal' ? 'Selección según tus intereses.' : 'Selección automática por actualidad, coincidencia de titulares entre medios y variedad de temas. La clasificación geográfica puede contener errores.'} La escucha con la pantalla bloqueada depende del navegador.</p><div class="transcript">${edition.paragraphs.map((p, i) => `<section class="transcript-section" id="paragraph-${i}"><p>${esc(p.text)}</p>${citations(p, edition.articles)}</section>`).join('')}</div>`;
+  $('#edition-content').innerHTML = `<div class="edition-header"><div><div class="eyebrow">${esc(scopeName(edition.scope))} · ÚLTIMAS ${edition.hours || profile.hours} HORAS</div><h2>Lo que ha pasado, a tu alcance.</h2><p>${min} min aprox. · ${edition.articles.length} noticias · ${new Set(edition.articles.map(a => a.source)).size} medios<br>Fuentes comprobadas a las ${time} · Hora de Madrid</p></div><button id="listen-edition" class="primary-button"><span>▶</span> Escuchar edición</button></div><p class="edition-notice">${esc(mode)}. ${esc(edition.notice || 'La duración depende del contenido disponible. La voz la proporciona tu dispositivo.')} ${edition.mode === 'extractive' ? 'La síntesis redactada con IA está pendiente de activación.' : ''}</p><p class="edition-notice">${edition.scope === 'personal' ? 'Selección según tus intereses.' : 'Selección automática por actualidad, coincidencia de titulares entre medios y variedad de temas. La clasificación geográfica puede contener errores.'} La escucha con la pantalla bloqueada depende del navegador.</p><div class="transcript">${edition.paragraphs.map((p, i) => `<section class="transcript-section" id="paragraph-${i}"><button class="story-listen text-button" data-listen-story="${i}" aria-label="Escuchar noticia ${i + 1}">▶ Escuchar noticia ${i + 1}</button><p>${esc(p.text)}</p>${citations(p, edition.articles)}</section>`).join('')}</div>`;
   $('#listen-edition').onclick = () => startSpeech(0);
 }
 async function createEdition() {
@@ -235,42 +237,71 @@ $('#create-edition').onclick = () => {
 };
 $('#regenerate').onclick = createEdition;
 
+const musicSettings = stored('brujula-music', { enabled: true, volume: 18 });
+const music = new NewsMusic({ enabled: musicSettings?.enabled !== false, volume: Number.isFinite(musicSettings?.volume) ? musicSettings.volume : 18 });
+const newsPlayer = 'speechSynthesis' in window ? new NewsPlayer({
+  engine: window.speechSynthesis,
+  makeUtterance: text => new SpeechSynthesisUtterance(text),
+  onChange: updatePlayer,
+  onError: () => { closeSpeech(); toast('La voz de tu dispositivo no está disponible. Puedes leer la edición.'); },
+}) : null;
+function updateMusicControls() {
+  $('#player-music').setAttribute('aria-pressed', String(music.enabled));
+  $('#player-music').setAttribute('aria-label', music.enabled ? 'Silenciar música de fondo' : 'Activar música de fondo');
+  $('#player-music').title = music.enabled ? 'Silenciar música de fondo' : 'Activar música de fondo';
+  $('#music-volume').value = music.volume;
+  $('#music-volume').disabled = !music.enabled;
+  $('#music-volume-value').textContent = music.volume + '%';
+}
+function updatePlayer(state) {
+  const playing = state.status === 'playing', finished = state.status === 'finished';
+  const current = playerEdition?.paragraphs[state.index];
+  const article = playerEdition?.articles.find(a => current?.sourceIds.includes(a.id));
+  $('#player-title').textContent = article?.title || 'Tu informativo Brújula';
+  $('#player-label').textContent = finished ? 'Edición terminada' : 'Noticia ' + (state.index + 1) + ' de ' + state.count + (state.status === 'paused' ? ' · En pausa' : '');
+  $('#player-toggle').textContent = playing ? 'Ⅱ' : '▶';
+  $('#player-toggle').setAttribute('aria-label', playing ? 'Pausar audio' : finished ? 'Volver a escuchar' : 'Continuar audio');
+  $('#player-next').disabled = finished || !state.count;
+  $('#player-back').disabled = state.index === 0 || !state.count;
+  $('#player-progress-fill').style.width = state.progress * 100 + '%';
+  $('#player-speed-note').textContent = state.pendingRate ? 'La nueva velocidad se aplica desde la próxima frase.' : '';
+  $$('.transcript-section').forEach((el, i) => el.classList.toggle('currently-listening', i === state.index && state.status !== 'idle' && !finished));
+  if (playing && music.enabled) music.start(); else music.pause();
+}
 function closeSpeech() {
-  speechGeneration++; if ('speechSynthesis' in window) window.speechSynthesis.cancel(); speechPlaying = false; speechUtterance = null; $('#player').hidden = true; document.body.classList.remove('audio-open');
+  newsPlayer?.stop(); music.pause(); playerEdition = null;
+  $('#player').hidden = true; document.body.classList.remove('audio-open');
 }
 function startSpeech(index) {
-  if (!('speechSynthesis' in window)) { toast('Tu navegador no admite lectura en voz alta. Puedes leer la edición en pantalla.'); return; }
+  if (!newsPlayer) { toast('Tu navegador no admite lectura en voz alta. Puedes leer la edición en pantalla.'); return; }
   if (!edition?.paragraphs.length) return;
-  speechGeneration++; window.speechSynthesis.cancel(); speechIndex = Math.max(0, Math.min(index, edition.paragraphs.length - 1));
-  const token = speechGeneration;
+  if (playerEdition !== edition) {
+    newsPlayer.load(edition.paragraphs.map((p, i) => {
+      const names = [...new Set(p.sourceIds.map(id => edition.articles.find(a => a.id === id)?.sourceName).filter(Boolean))];
+      const opening = i === 0 ? 'Brújula. Informativo de ' + scopeName(edition.scope) + '. Noticias de las últimas ' + (edition.hours || profile.hours) + ' horas. ' : '';
+      return opening + 'Según ' + names.join(' y ') + '. ' + p.text;
+    }));
+    playerEdition = edition;
+  }
+  if (music.enabled) music.unlock();
+  newsPlayer.setRate(Number($('#player-speed').value));
   $('#player').hidden = false; document.body.classList.add('audio-open');
-  const read = () => {
-    if (token !== speechGeneration) return;
-    const p = edition.paragraphs[speechIndex];
-    if (!p) { speechPlaying = false; $('#player-toggle').textContent = '▶'; $('#player-toggle').setAttribute('aria-label', 'Volver a escuchar'); $('#player-label').textContent = 'Edición terminada'; $('#player-progress-fill').style.width = '100%'; return; }
-    const names = [...new Set(p.sourceIds.map(id => edition.articles.find(a => a.id === id)?.sourceName).filter(Boolean))];
-    const opening = speechIndex === 0 ? 'Brújula. Informativo de ' + scopeName(edition.scope) + '. Noticias de las últimas ' + (edition.hours || profile.hours) + ' horas. ' : '';
-    const utterance = new SpeechSynthesisUtterance(opening + 'Según ' + names.join(' y ') + '. ' + p.text);
-    speechUtterance = utterance; utterance.lang = 'es-ES'; utterance.rate = Number($('#player-speed').value);
-    const voices = window.speechSynthesis.getVoices(); utterance.voice = voices.find(v => v.lang === 'es-ES') || voices.find(v => v.lang.startsWith('es')) || null;
-    utterance.onstart = () => { if (token !== speechGeneration) return; speechPlaying = true; $('#player-toggle').textContent = 'Ⅱ'; $('#player-toggle').setAttribute('aria-label', 'Pausar audio'); $('#player-label').textContent = 'Noticia ' + (speechIndex + 1) + ' de ' + edition.paragraphs.length; $('#player-progress-fill').style.width = speechIndex / edition.paragraphs.length * 100 + '%'; };
-    utterance.onend = () => { if (token !== speechGeneration) return; speechIndex++; read(); };
-    utterance.onerror = event => { if (token !== speechGeneration || event.error === 'canceled' || event.error === 'interrupted') return; closeSpeech(); toast('La voz de tu dispositivo no está disponible. Puedes leer la edición.'); };
-    window.speechSynthesis.speak(utterance);
-  };
-  read();
+  newsPlayer.play(index);
 }
-$('#player-toggle').onclick = () => {
-  if (!('speechSynthesis' in window)) return;
-  if (speechPlaying) { speechSynthesis.pause(); speechPlaying = false; $('#player-toggle').textContent = '▶'; $('#player-toggle').setAttribute('aria-label', 'Continuar audio'); }
-  else if (speechSynthesis.paused) { speechSynthesis.resume(); speechPlaying = true; $('#player-toggle').textContent = 'Ⅱ'; $('#player-toggle').setAttribute('aria-label', 'Pausar audio'); }
-  else startSpeech(speechIndex >= edition.paragraphs.length ? 0 : speechIndex);
+$('#player-toggle').onclick = () => { if (!newsPlayer) return; if (newsPlayer.status === 'playing') newsPlayer.pause(); else { if (music.enabled) music.unlock(); newsPlayer.play(); } };
+$('#player-back').onclick = () => newsPlayer?.previous();
+$('#player-next').onclick = () => newsPlayer?.next();
+$('#player-speed').onchange = () => { newsPlayer?.setRate(Number($('#player-speed').value)); };
+$('#player-music').onclick = () => {
+  music.setEnabled(!music.enabled);
+  if (music.enabled && newsPlayer?.status === 'playing') music.start();
+  saveLocal('brujula-music', { enabled: music.enabled, volume: music.volume }); updateMusicControls();
 };
-$('#player-back').onclick = () => startSpeech(speechIndex - 1);
-$('#player-next').onclick = () => { if (speechIndex + 1 >= edition.paragraphs.length) closeSpeech(); else startSpeech(speechIndex + 1); };
-$('#player-speed').onchange = () => { if (speechUtterance) startSpeech(speechIndex); };
+$('#music-volume').oninput = e => { music.setVolume(e.target.value); saveLocal('brujula-music', { enabled: music.enabled, volume: music.volume }); updateMusicControls(); };
 $('#player-close').onclick = closeSpeech;
+document.addEventListener('click', e => { const b = e.target.closest('[data-listen-story]'); if (b) startSpeech(Number(b.dataset.listenStory)); });
 window.addEventListener('pagehide', closeSpeech);
+updateMusicControls();
 
 async function ask(question) {
   if (chatBusy || question.trim().length < 3) return;
