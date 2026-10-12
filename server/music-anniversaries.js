@@ -47,7 +47,7 @@ export async function normalizeAnniversaries(data, day) {
       if (seen.has(dedupKey)) continue;
       seen.add(dedupKey);
       const excerpt = text.length > 500 ? text.slice(0, 497).replace(/\s\S*$/, '') + '…' : text;
-      items.push({ id: 'anniversary-' + (await sha256Hex(dedupKey)).slice(0, 16), kind, label, year: event.year, yearsAgo: day.year - event.year, title: textOnly(page.titles?.normalized || page.title).replace(/_/g, ' ').slice(0, 160), text: excerpt, url, sourceURL: calendarURL(day) + '#' + anchors[kind], sourceName: 'Wikipedia en español', license: 'CC BY-SA 4.0', licenseURL: LICENSE_URL });
+      items.push({ id: 'anniversary-' + (await sha256Hex(dedupKey)).slice(0, 16), kind, label, year: event.year, yearsAgo: day.year - event.year, musicMetadata: musicalPages.map(p => textOnly(p.description)).join(' ').slice(0, 500), title: textOnly(page.titles?.normalized || page.title).replace(/_/g, ' ').slice(0, 160), text: excerpt, url, sourceURL: calendarURL(day) + '#' + anchors[kind], sourceName: 'Wikipedia en español', license: 'CC BY-SA 4.0', licenseURL: LICENSE_URL });
     }
   }
   return items.sort((a, b) => Object.keys(kinds).indexOf(a.kind) - Object.keys(kinds).indexOf(b.kind) || b.year - a.year).slice(0, 80);

@@ -189,6 +189,9 @@ export function normalizeProfile(input = {}) {
     topicMode: input.topicMode === 'strict' ? 'strict' : 'priority',
     musicGenres: Array.isArray(input.musicGenres) ? [...new Set(input.musicGenres.filter(id => musicGenres.some(g => g.id === id)))] : [],
     musicSpainOnly: input.musicSpainOnly === true,
+    includeAnniversaries: input.includeAnniversaries !== false,
+    anniversaryEra: input.anniversaryEra === '80s' ? '80s' : 'all',
+    anniversaryKind: ['events', 'births', 'deaths'].includes(input.anniversaryKind) ? input.anniversaryKind : 'all',
     ...normalizeFeedback(input, validFeedbackTopics, normalizeText),
   };
 }

@@ -1,6 +1,8 @@
 import { musicGenres } from '../public/music-filters.js';
 import { categories, regions, sources, getNews, personalize, findEvidence } from './news.js';
-import { synthesize } from './ai.js';
+import { appendAnniversary } from '../public/anniversary-news.js';
+import { normalizeProfile } from '../public/personalization.js';
+import { synthesize, extractive } from './ai.js';
 import { writeBroadcast, buildClips, llmAvailable } from './broadcast.js';
 import { ttsAvailable, synthesizeSpeech, verifyClip, VOICE_NAMES, MAX_CLIP_CHARS } from './tts.js';
 import { selectBulletin } from '../public/bulletin.js';
@@ -75,9 +77,16 @@ export async function api(request, env = {}) {
       articles = input.scope ? selectBulletin(news.articles, { scope: input.scope, hours: input.hours, limit: count, preferences: input.preferences, profile: input.profile }) : personalize(news.articles, input.preferences, count, input.profile, { maxPerSource: 4 });
       if (!articles.length) return json({ error: 'No hay noticias en este intervalo. Prueba las últimas 24 horas u otro ámbito.' }, 422);
     }
+    if (path === '/api/edition' && normalizeProfile(input.profile).includeAnniversaries) {
+      const calendar = await getMusicAnniversaries();
+      const count = input.length === 'long' ? 20 : input.length === 'short' ? 6 : 12;
+      articles = appendAnniversary(articles, calendar, input.profile, { limit: count });
+    }
     const wantsAudio = path === '/api/edition' && input.audio === true && ttsAvailable(env);
     const narration = ['alternating', 'female', 'male'].includes(input.narration) ? input.narration : 'alternating';
-    const result = wantsAudio ? await writeBroadcast(articles, env, { length: input.length, scope: input.scope, hours: input.hours }) : await synthesize(articles, env, input.question);
+    const currentNews = articles.filter(a => a.kind !== 'anniversary'), historical = articles.filter(a => a.kind === 'anniversary');
+    const generated = wantsAudio ? await writeBroadcast(currentNews, env, { length: input.length, scope: input.scope, hours: input.hours }) : await synthesize(currentNews, env, input.question);
+    const result = historical.length ? { ...generated, paragraphs: [...generated.paragraphs, ...extractive(historical)] } : generated;
     const audio = wantsAudio ? { clips: await buildClips(result, articles, categories, env, { narration, scope: input.scope, hours: Number(input.hours) || 12 }) } : undefined;
     const text = (audio ? audio.clips : result.paragraphs).map(p => p.text).join('\n\n');
     return json({ ...result, ...(audio ? { audio } : {}), articles, updatedAt: news.updatedAt, estimatedSeconds: Math.max(1, Math.round(text.split(/\s+/).length / 2.5)), message: path === '/api/ask' && result.mode === 'extractive' ? 'Estas son las fuentes que coinciden con tu pregunta. La respuesta redactada requiere activar la IA.' : result.paragraphs.length ? null : 'Las fuentes disponibles no permiten responder a esa pregunta.' });

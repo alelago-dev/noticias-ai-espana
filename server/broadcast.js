@@ -9,7 +9,7 @@ import { cacheGetJSON, cachePutJSON, sha256Hex } from './cache.js';
 import { bulletinStory, storyNarration, spokenText } from '../public/narration.js';
 import { voiceFor, signClip, VOICE_NAMES } from './tts.js';
 
-/** @typedef {{id: string, title: string, excerpt: string, sourceName?: string, publishedAt?: string, category?: string}} Article */
+/** @typedef {{id: string, title: string, excerpt: string, sourceName?: string, publishedAt?: string, category?: string, kind?: string}} Article */
 /** @typedef {{text: string, sourceIds: string[]}} Paragraph */
 
 const itemSchema = z.object({ items: z.array(z.object({ text: z.string().min(1).max(1600), sourceIds: z.array(z.string()).min(1).max(4) })).max(20) });
@@ -141,6 +141,7 @@ export async function writeBroadcast(articles, env, options = {}, fetcher = fetc
  */
 export async function buildClips(edition, articles, categories, env, { narration = 'alternating', scope, hours, now } = {}) {
   const frame = broadcastFrame({ scope, hours, now });
+  if (articles.some(a => a.kind === 'anniversary')) frame.intro += ' Al final, recordamos una efeméride musical.';
   const last = edition.paragraphs.length - 1;
   return Promise.all(edition.paragraphs.map(async (paragraph, index) => {
     const body = edition.mode === 'ai' ? spokenText(paragraph.text) : storyNarration(bulletinStory(paragraph, articles, categories));

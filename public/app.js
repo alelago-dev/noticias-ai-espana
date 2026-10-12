@@ -3,6 +3,7 @@ import { FEEDBACK_LIMITS } from './news-feedback.js';
 import { selectBulletin } from './bulletin.js';
 import { NewsPlayer } from './audio-player.js';
 import { ClipPlayer } from './clip-player.js';
+import { chooseAnniversary, appendAnniversary, anniversaryArticle } from './anniversary-news.js';
 import { mountMusicAnniversaries } from './anniversaries.js';
 import { NewsMusic, musicPreferences, MUSIC_REVISION } from './news-music.js';
 import { narratorFor, resolveNarrators, voiceKey, bulletinStory, storyNarration } from './narration.js';
@@ -60,14 +61,19 @@ $('#today').textContent = new Intl.DateTimeFormat('es-ES', { weekday: 'long', da
 
 function card(a, showFeedback = false) {
   const c = category(a.category), isSaved = saved.some(s => s.id === a.id);
-  return `<article class="news-card"><div class="card-graphic cat-${esc(a.category)}"><span>${esc(c.name)}</span><span class="category-icon" aria-hidden="true">${esc(c.icon)}</span></div><div class="card-body"><div class="card-source"><span class="source-logo">${esc(a.sourceName)}</span><span class="source-dot"></span><time datetime="${esc(a.publishedAt)}">${esc(age(a.publishedAt))}</time></div><h3><a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">${esc(a.title)}</a></h3>${a.excerpt ? `<p>${esc(a.excerpt)}</p>` : ''}${a.matchReasons?.length ? `<div class="match-reasons"><span>PARA TI</span> ${a.matchReasons.slice(0, 2).map(esc).join(' · ')}</div>` : ''}</div><div class="card-footer"><a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">Leer en ${esc(a.sourceName)} ↗</a>${showFeedback ? `<button class="feedback-button" data-feedback="${esc(a.id)}" aria-label="No me interesa: ${esc(a.title)}">No me interesa</button>` : ''}<button class="save-button ${isSaved ? 'saved' : ''}" data-save="${esc(a.id)}" aria-label="${isSaved ? 'Quitar de guardadas' : 'Guardar noticia'}" aria-pressed="${isSaved}">${isSaved ? '▣' : '▱'}</button></div></article>`;
+  const historical = a.kind === 'anniversary';
+  const timeLabel = historical ? 'Efeméride del ' + new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long', timeZone: 'Europe/Madrid' }).format(new Date(a.calendarDate + 'T12:00:00Z')) : age(a.publishedAt);
+  return `<article class="news-card"><div class="card-graphic cat-${esc(a.category)}"><span>${historical ? 'Efemérides musicales' : esc(c.name)}</span><span class="category-icon" aria-hidden="true">${esc(c.icon)}</span></div><div class="card-body"><div class="card-source"><span class="source-logo">${esc(a.sourceName)}</span><span class="source-dot"></span><time datetime="${esc(historical ? a.calendarDate : a.publishedAt)}">${esc(timeLabel)}</time></div><h3><a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">${esc(a.title)}</a></h3>${a.excerpt ? `<p>${esc(a.excerpt)}</p>` : ''}${a.matchReasons?.length ? `<div class="match-reasons"><span>PARA TI</span> ${a.matchReasons.slice(0, 2).map(esc).join(' · ')}</div>` : ''}</div><div class="card-footer"><a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">Leer en ${esc(a.sourceName)} ↗</a>${showFeedback ? `<button class="feedback-button" data-feedback="${esc(a.id)}" aria-label="No me interesa: ${esc(a.title)}">No me interesa</button>` : ''}<button class="save-button ${isSaved ? 'saved' : ''}" data-save="${esc(a.id)}" aria-label="${isSaved ? 'Quitar de guardadas' : 'Guardar noticia'}" aria-pressed="${isSaved}">${isSaved ? '▣' : '▱'}</button>${historical ? `<small class="historical-license">Texto histórico de Wikipedia · <a href="${esc(safeURL(a.licenseURL))}" target="_blank" rel="noopener noreferrer">${esc(a.license)}</a></small>` : ''}</div></article>`;
 }
 function empty(title, text, action = '') { return `<div class="empty-state"><span aria-hidden="true">✳</span><h2>${esc(title)}</h2><p>${esc(text)}</p>${action}</div>`; }
 function selectedArticles() {
   const items = news.articles.filter(a => filter === 'all' || a.category === filter || a.categories?.includes(filter));
   const query = normalizeText($('#search').value);
   const matching = query ? items.filter(a => normalizeText(a.title + ' ' + a.excerpt + ' ' + a.sourceName).includes(query)) : items;
-  return personalize(matching, preferences, matching.length, profile, { sort: $('#sort').value });
+  const selected = personalize(matching, preferences, matching.length, profile, { sort: $('#sort').value });
+  const historical = chooseAnniversary(musicAnniversaries.data, profile);
+  if (historical && ['all', 'musica'].includes(filter) && (!query || normalizeText(historical.title + ' ' + historical.excerpt + ' ' + historical.sourceName).includes(query))) selected.splice(Math.min(3, selected.length), 0, historical);
+  return selected;
 }
 function renderFeed() {
   const items = selectedArticles();
@@ -75,7 +81,7 @@ function renderFeed() {
   $('#retry-news')?.addEventListener('click', loadNews);
   $('#load-more').hidden = items.length <= displayLimit || !!loadError;
   const available = news.sources.filter(s => s.fresh).length;
-  $('#news-meta').textContent = news.updatedAt ? items.length + ' noticias en ' + profile.hours + ' h · ' + available + ' medios con actualidad · Comprobado ' + new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(news.updatedAt)) : 'Actualidad de medios españoles';
+  $('#news-meta').textContent = news.updatedAt ? items.filter(a => a.kind !== 'anniversary').length + ' noticias en ' + profile.hours + ' h' + (items.some(a => a.kind === 'anniversary') ? ' · 1 efeméride' : '') + ' · ' + available + ' medios con actualidad · Comprobado ' + new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(news.updatedAt)) : 'Actualidad de medios españoles';
   const regionName = config.regions?.find(r => r.id === profile.region)?.name;
   $('#freshness-note').textContent = 'Últimas ' + profile.hours + ' horas' + (profile.topicMode === 'strict' ? ' · Solo tus subtemas' : ' · Tus subtemas tienen prioridad') + (preferences.musica > 0 && profile.musicSpainOnly ? ' · Música: conciertos en España' : '') + (profile.city || regionName ? ' · Cerca de ' + (profile.city || regionName) : '');
 }
@@ -88,7 +94,7 @@ function renderInterests() {
   $('#filters').innerHTML = `<button data-filter="all" class="${filter === 'all' ? 'active' : ''}" aria-pressed="${filter === 'all'}">Para ti</button>` + selected.map(c => `<button data-filter="${c.id}" class="${filter === c.id ? 'active' : ''}" aria-pressed="${filter === c.id}">${esc(c.name)}</button>`).join('');
 }
 function musicFilterControls() {
-  return `<div class="music-filters"><h3>Estilos que quieres seguir</h3><p>Elige tantos como quieras. Sin selección, recibes todos los estilos. Estos filtros se aplican a las noticias de música del feed y de «Mis temas».</p><div class="topic-chips" role="group" aria-label="Estilos musicales">${musicGenres.map(g => `<button data-music-genre="${g.id}" class="topic-chip ${draftProfile.musicGenres.includes(g.id) ? 'selected' : ''}" aria-pressed="${draftProfile.musicGenres.includes(g.id)}">${draftProfile.musicGenres.includes(g.id) ? '<span aria-hidden="true">✓</span> ' : ''}${esc(g.name)}</button>`).join('')}</div><div class="music-filter-actions"><button class="text-button" data-music-preset>Elegir indie y rock</button><button class="text-button" data-music-clear>Todos los estilos</button></div><label class="toggle-label"><input type="checkbox" id="music-spain-only" ${draftProfile.musicSpainOnly ? 'checked' : ''}><span>Solo conciertos y giras en España<small>Combina los estilos elegidos con menciones de conciertos, giras o festivales en España. Desactívalo para recibir también discos, entrevistas y otras novedades.</small></span></label><p class="music-filter-note">Puedes añadir nombres de bandas en «Nombres, lugares y temas propios» para darles prioridad dentro de tu selección. Las coincidencias se detectan en titulares y extractos; no es una agenda completa de conciertos.</p></div>`;
+  return `<div class="music-filters"><h3>Estilos que quieres seguir</h3><p>Elige tantos como quieras. Sin selección, recibes todos los estilos. Estos filtros se aplican a las noticias de música del feed y de «Mis temas».</p><div class="topic-chips" role="group" aria-label="Estilos musicales">${musicGenres.map(g => `<button data-music-genre="${g.id}" class="topic-chip ${draftProfile.musicGenres.includes(g.id) ? 'selected' : ''}" aria-pressed="${draftProfile.musicGenres.includes(g.id)}">${draftProfile.musicGenres.includes(g.id) ? '<span aria-hidden="true">✓</span> ' : ''}${esc(g.name)}</button>`).join('')}</div><div class="music-filter-actions"><button class="text-button" data-music-preset>Elegir indie y rock</button><button class="text-button" data-music-clear>Todos los estilos</button></div><label class="toggle-label"><input type="checkbox" id="music-spain-only" ${draftProfile.musicSpainOnly ? 'checked' : ''}><span>Solo conciertos y giras en España<small>Combina los estilos elegidos con menciones de conciertos, giras o festivales en España. Desactívalo para recibir también discos, entrevistas y otras novedades.</small></span></label><label class="toggle-label"><input type="checkbox" id="profile-anniversaries" ${draftProfile.includeAnniversaries ? 'checked' : ''}><span>Incluir una efeméride musical del día<small>Una tarjeta en tu radar y una nota al final del informativo, con su año histórico y fuente. Es independiente del nivel de interés en Música.</small></span></label><div class="anniversary-controls"><label>Época <select id="anniversary-era" ${draftProfile.includeAnniversaries ? '' : 'disabled'}><option value="all" ${draftProfile.anniversaryEra === 'all' ? 'selected' : ''}>Todas las épocas</option><option value="80s" ${draftProfile.anniversaryEra === '80s' ? 'selected' : ''}>Años 80 · 1980–1989</option></select></label><label>Tipo <select id="anniversary-kind" ${draftProfile.includeAnniversaries ? '' : 'disabled'}>${[['all', 'Todos'], ['events', 'Acontecimientos'], ['births', 'Nacimientos'], ['deaths', 'Fallecimientos']].map(([id, label]) => `<option value="${id}" ${draftProfile.anniversaryKind === id ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div><p class="music-filter-note">Puedes añadir nombres de bandas en «Nombres, lugares y temas propios» para darles prioridad dentro de tu selección. Las coincidencias se detectan en titulares y extractos; no es una agenda completa de conciertos.</p></div>`;
 }
 function renderDraftCards() {
   $('#preferences-grid').innerHTML = config.categories.map(c => {
@@ -149,11 +155,14 @@ $('#preferences-grid').addEventListener('click', e => {
   if (level) $(`[data-interest="${level.dataset.interest}"][data-level="${level.dataset.level}"]`)?.focus({ preventScroll: true });
 });
 $('#preferences-grid').addEventListener('change', e => {
-  if (e.target.id !== 'music-spain-only') return;
-  draftProfile.musicSpainOnly = e.target.checked;
-  if (e.target.checked && !draftPreferences.musica) draftPreferences.musica = 2;
+  const id = e.target.id;
+  if (id === 'music-spain-only') { draftProfile.musicSpainOnly = e.target.checked; if (e.target.checked && !draftPreferences.musica) draftPreferences.musica = 2; }
+  else if (id === 'profile-anniversaries') draftProfile.includeAnniversaries = e.target.checked;
+  else if (id === 'anniversary-era') draftProfile.anniversaryEra = e.target.value;
+  else if (id === 'anniversary-kind') draftProfile.anniversaryKind = e.target.value;
+  else return;
   renderDraftCards();
-  $('#music-spain-only').focus({ preventScroll: true });
+  $('#' + id).focus({ preventScroll: true });
 });
 $('#select-all').onclick = () => { draftPreferences = Object.fromEntries(config.categories.map(c => [c.id, 2])); renderDraftCards(); };
 $('#reset-interests').onclick = () => { draftPreferences = { ...defaults }; draftProfile = normalizeProfile({}); renderProfileControls(); toast('Selección inicial preparada. Pulsa Guardar cambios para aplicarla.'); };
@@ -181,6 +190,7 @@ $('#save-preferences').onclick = () => {
   draftProfile = normalizeProfile(profile);
   filter = 'all'; displayLimit = 9; edition = null; closeSpeech(); prepareMorning();
   $('#edition-content').innerHTML = empty('Tu selección ha cambiado.', 'Prepara una nueva edición con tus intereses actualizados.');
+  musicAnniversaries.refreshIfNewDay();
   renderInterests(); renderFeed(); updateSaveStatus(); toast('Tus intereses se aplican al feed y a la edición Mis temas.'); navigate('home');
 };
 $('#search').addEventListener('input', () => { displayLimit = 9; renderFeed(); });
@@ -192,12 +202,12 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-save]'); if (!b) return;
   const found = saved.find(a => a.id === b.dataset.save);
   if (found) { saved = saved.filter(a => a.id !== found.id); toast('Noticia quitada de guardadas.'); }
-  else { const a = news.articles.find(a => a.id === b.dataset.save); if (!a) return; if (saved.length >= 100) { toast('Puedes guardar hasta 100 noticias. Quita alguna para añadir otra.'); return; } saved.unshift(a); toast('Guardada para volver con calma.'); }
+  else { const a = findArticle(b.dataset.save); if (!a) return; if (saved.length >= 100) { toast('Puedes guardar hasta 100 noticias. Quita alguna para añadir otra.'); return; } saved.unshift(a); toast('Guardada para volver con calma.'); }
   saveLocal('brujula-saved', saved); renderSaved(); renderFeed();
 });
 let feedbackArticle = null, feedbackUndo = null;
 function feedbackSnapshot(value) {
-  return { hiddenArticles: [...value.hiddenArticles], blockedTopics: [...value.blockedTopics], blockedTerms: [...value.blockedTerms] };
+  return { includeAnniversaries: value.includeAnniversaries, hiddenArticles: [...value.hiddenArticles], blockedTopics: [...value.blockedTopics], blockedTerms: [...value.blockedTerms] };
 }
 function topicName(id) {
   const [categoryId, topicId] = id.split(':');
@@ -213,9 +223,14 @@ function renderFeedbackSettings() {
   $('#feedback-hidden-count').textContent = count ? count + ' noticias ocultas en este navegador.' : 'No tienes noticias ocultas.';
   $('#feedback-clear-hidden').hidden = !count;
 }
+function findArticle(id) {
+  const calendar = musicAnniversaries.data;
+  return news.articles.find(a => a.id === id) || calendar?.items?.map(item => anniversaryArticle(item, calendar.date)).find(a => a.id === id) || playerEdition?.articles.find(a => a.id === id);
+}
 function openFeedback(id) {
-  feedbackArticle = news.articles.find(a => a.id === id) || playerEdition?.articles.find(a => a.id === id);
+  feedbackArticle = findArticle(id);
   if (!feedbackArticle) return;
+  $('#feedback-disable-anniversaries').hidden = feedbackArticle.kind !== 'anniversary';
   $('#feedback-headline').textContent = feedbackArticle.title;
   const topics = [...new Set(feedbackArticle.topics || [])].filter(t => config.categories.some(c => c.topics.some(x => c.id + ':' + x.id === t)));
   $('#feedback-topics').innerHTML = topics.length ? `<h3>No mostrar más este subtema</h3>${topics.map(t => `<button class="topic-chip" data-block-topic="${esc(t)}">${esc(topicName(t))}</button>`).join('')}` : '';
@@ -232,7 +247,7 @@ function persistFeedback(next, message, undo = true) {
   draftProfile = normalizeProfile({ ...draftProfile, ...next });
   saveLocal('brujula-profile', profile);
   audioEditions.clear();
-  renderFeed(); prepareMorning(); renderFeedbackSettings(); updateSaveStatus();
+  renderFeed(); prepareMorning(); renderFeedbackSettings(); renderDraftCards(); updateSaveStatus();
   if (playerEdition && ['playing', 'loading', 'paused'].includes(activePlayer?.status)) {
     if (['playing', 'loading'].includes(activePlayer.status) && paragraphHidden(playerEdition.paragraphs[activePlayer.index], playerEdition)) { activePlayer.pause(); if (activePlayer === clipPlayer) clipAudio.pause(); activePlayer.next(); }
   } else {
@@ -249,6 +264,7 @@ $('#feedback-hide').onclick = () => {
   const next = [feedbackArticle.id, ...profile.hiddenArticles.filter(id => id !== feedbackArticle.id)].slice(0, FEEDBACK_LIMITS.hiddenArticles);
   $('#feedback-dialog').close(); persistFeedback({ hiddenArticles: next }, 'Noticia oculta. Tu selección queda guardada.');
 };
+$('#feedback-disable-anniversaries').onclick = () => { $('#feedback-dialog').close(); persistFeedback({ includeAnniversaries: false }, 'Efemérides desactivadas para tus próximas selecciones.'); };
 $('#feedback-topics').onclick = e => {
   const b = e.target.closest('[data-block-topic]'); if (!b) return;
   if (profile.blockedTopics.length >= FEEDBACK_LIMITS.blockedTopics) { $('#feedback-error').textContent = 'Puedes excluir hasta veinte subtemas. Quita uno en Mis intereses.'; return; }
@@ -292,18 +308,20 @@ setInterval(() => { if (document.visibilityState === 'visible') loadNews(); }, 1
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && (!news.updatedAt || Date.now() - +new Date(news.updatedAt) >= 120000)) loadNews(); });
 
 function citations(paragraph, articles) {
-  return `<div class="citations">${paragraph.sourceIds.map(id => articles.find(a => a.id === id)).filter(Boolean).map(a => `<a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer" title="${esc(a.title)}">${esc(a.sourceName)} · ${esc(a.title.slice(0, 65))}${a.title.length > 65 ? '…' : ''} ↗</a>`).join('')}</div>`;
+  const historical = paragraph.sourceIds.map(id => articles.find(a => a.id === id)).find(a => a?.kind === 'anniversary');
+  return `<div class="citations">${paragraph.sourceIds.map(id => articles.find(a => a.id === id)).filter(Boolean).map(a => `<a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer" title="${esc(a.title)}">${esc(a.sourceName)} · ${esc(a.title.slice(0, 65))}${a.title.length > 65 ? '…' : ''} ↗</a>`).join('')}${historical ? `<small class="historical-license">Efeméride histórica · Wikipedia · <a href="${esc(safeURL(historical.licenseURL))}" target="_blank" rel="noopener noreferrer">${esc(historical.license)}</a></small>` : ''}</div>`;
 }
 function prepareMorning() {
   const length = $('#bulletin-length').value;
   const limit = length === 'short' ? 6 : length === 'long' ? 20 : 12;
-  const articles = loadError ? [] : selectBulletin(news.articles, { scope: bulletinScope, hours: bulletinHours, limit, preferences, profile });
+  const current = loadError ? [] : selectBulletin(news.articles, { scope: bulletinScope, hours: bulletinHours, limit, preferences, profile });
+  const articles = appendAnniversary(current, musicAnniversaries.data, profile, { limit });
   const paragraphs = articles.map(a => ({ text: a.title + (a.excerpt && !a.excerpt.startsWith(a.title) ? '. ' + a.excerpt : ''), sourceIds: [a.id] }));
   morningEdition = paragraphs.length ? { mode: 'extractive', scope: bulletinScope, hours: bulletinHours, articles, paragraphs, updatedAt: news.updatedAt, estimatedSeconds: Math.max(1, Math.round(paragraphs.map(p => p.text).join(' ').split(/\s+/).length / 2.5)) } : null;
   $('#create-edition').disabled = !morningEdition;
   $$('[data-scope]').forEach(b => { const active = b.dataset.scope === bulletinScope; b.classList.toggle('active', active); b.setAttribute('aria-pressed', active); });
   const clock = news.updatedAt ? new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(news.updatedAt)) : '';
-  $('#bulletin-meta').textContent = morningEdition ? articles.length + (articles.length === 1 ? ' noticia · ' : ' noticias · ') + Math.ceil(morningEdition.estimatedSeconds / 60) + ' min aprox. · ' + new Set(articles.map(a => a.source)).size + (new Set(articles.map(a => a.source)).size === 1 ? ' medio · Comprobado ' : ' medios · Comprobado ') + clock : loadError ? 'No se pueden actualizar las noticias. Pulsa Actualizar para reintentar.' : 'No hay noticias en este intervalo. Prueba 24 horas u otro ámbito.';
+  $('#bulletin-meta').textContent = morningEdition ? articles.length + (articles.some(a => a.kind === 'anniversary') ? ' notas · ' : articles.length === 1 ? ' noticia · ' : ' noticias · ') + Math.ceil(morningEdition.estimatedSeconds / 60) + ' min aprox. · ' + new Set(articles.map(a => a.source)).size + (new Set(articles.map(a => a.source)).size === 1 ? ' medio · Comprobado ' : ' medios · Comprobado ') + clock : loadError ? 'No se pueden actualizar las noticias. Pulsa Actualizar para reintentar.' : 'No hay noticias en este intervalo. Prueba 24 horas u otro ámbito.';
 }
 $('#bulletin-hours').value = bulletinHours;
 function updateBulletin() {
@@ -320,7 +338,7 @@ function renderEdition() {
   const min = Math.ceil(edition.estimatedSeconds / 60);
   const mode = edition.mode === 'ai' ? 'Resumen con IA · Revisa las fuentes' : 'Selección de titulares y extractos RSS';
   const time = new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(edition.updatedAt));
-  $('#edition-content').innerHTML = `<div class="edition-header"><div><div class="eyebrow">${esc(scopeName(edition.scope))} · ÚLTIMAS ${edition.hours || profile.hours} HORAS</div><h2>Lo que ha pasado, a tu alcance.</h2><p>${min} min aprox. · ${edition.articles.length} noticias · ${new Set(edition.articles.map(a => a.source)).size} medios<br>Fuentes comprobadas a las ${time} · Hora de Madrid</p></div><button id="listen-edition" class="primary-button"><span>▶</span> Escuchar edición</button></div><p class="edition-notice">${esc(mode)}. ${esc(edition.notice || (edition.audio ? 'La duración depende del contenido disponible. Locución con voz neuronal.' : 'La duración depende del contenido disponible. La voz la proporciona tu dispositivo.'))} ${edition.mode === 'extractive' ? 'La síntesis redactada con IA está pendiente de activación.' : ''}</p><p class="edition-notice">${edition.scope === 'personal' ? 'Selección según tus intereses.' : 'Selección automática por actualidad, coincidencia de titulares entre medios y variedad de temas. La clasificación geográfica puede contener errores.'} La escucha con la pantalla bloqueada depende del navegador.</p><div class="transcript">${edition.paragraphs.map((p, i) => { const story = bulletinStory(p, edition.articles, config.categories); return `<section class="transcript-section" id="paragraph-${i}"><button class="story-listen text-button" data-listen-story="${i}" aria-label="Escuchar noticia ${i + 1}">▶ Escuchar noticia ${i + 1}</button><button class="text-button story-feedback" data-feedback="${esc(p.sourceIds[0])}">No me interesa</button><h3 class="story-heading">${esc(story.heading)}</h3>${story.body ? `<p>${esc(story.body)}</p>` : ''}${citations(p, edition.articles)}</section>`; }).join('')}</div>`;
+  $('#edition-content').innerHTML = `<div class="edition-header"><div><div class="eyebrow">${esc(scopeName(edition.scope))} · ÚLTIMAS ${edition.hours || profile.hours} HORAS</div><h2>Lo que ha pasado, a tu alcance.</h2><p>${min} min aprox. · ${edition.articles.length} ${edition.articles.some(a => a.kind === 'anniversary') ? 'notas' : 'noticias'} · ${new Set(edition.articles.map(a => a.source)).size} medios<br>Fuentes comprobadas a las ${time} · Hora de Madrid</p></div><button id="listen-edition" class="primary-button"><span>▶</span> Escuchar edición</button></div><p class="edition-notice">${esc(mode)}. ${esc(edition.notice || (edition.audio ? 'La duración depende del contenido disponible. Locución con voz neuronal.' : 'La duración depende del contenido disponible. La voz la proporciona tu dispositivo.'))} ${edition.mode === 'extractive' ? 'La síntesis redactada con IA está pendiente de activación.' : ''}</p><p class="edition-notice">${edition.scope === 'personal' ? 'Selección según tus intereses.' : 'Selección automática por actualidad, coincidencia de titulares entre medios y variedad de temas. La clasificación geográfica puede contener errores.'} La escucha con la pantalla bloqueada depende del navegador.</p><div class="transcript">${edition.paragraphs.map((p, i) => { const story = bulletinStory(p, edition.articles, config.categories); return `<section class="transcript-section" id="paragraph-${i}"><button class="story-listen text-button" data-listen-story="${i}" aria-label="Escuchar noticia ${i + 1}">▶ Escuchar noticia ${i + 1}</button><button class="text-button story-feedback" data-feedback="${esc(p.sourceIds[0])}">No me interesa</button><h3 class="story-heading">${esc(story.heading)}</h3>${story.body ? `<p>${esc(story.body)}</p>` : ''}${citations(p, edition.articles)}</section>`; }).join('')}</div>`;
   $('#listen-edition').onclick = () => startSpeech(0);
 }
 async function createEdition() {
@@ -557,7 +575,7 @@ async function init() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 init();
-const musicAnniversaries = mountMusicAnniversaries({ request, escapeHTML: esc, safeURL });
+const musicAnniversaries = mountMusicAnniversaries({ request, isEnabled: () => profile.includeAnniversaries, onUpdate: () => { renderFeed(); prepareMorning(); } });
 $('#refresh').addEventListener('click', () => musicAnniversaries.refresh());
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') musicAnniversaries.refreshIfNewDay(); });
 setInterval(() => { if (document.visibilityState === 'visible') musicAnniversaries.refreshIfNewDay(); }, 60000);

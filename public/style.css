@@ -101,12 +101,10 @@ body.is-playing .eq i{animation:eq 1s ease-in-out infinite}body.is-playing .eq i
 .search input{border:0;background:transparent;outline:none;font-size:14px;width:100%;min-width:0}.search:focus-within{box-shadow:0 0 0 2px var(--accent)}.search input:focus-visible{outline:none}
 .sort-label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px}
 
-.anniversary-section{margin:32px 0;padding-bottom:24px;border-bottom:1px solid var(--line)}
 .anniversary-controls{display:flex;flex-wrap:wrap;gap:12px;margin:16px 0}
 .anniversary-controls label{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;color:var(--muted);font-size:13px}
 .anniversary-controls select{min-width:0;max-width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--text);font:inherit}
 .anniversary-note{color:var(--muted);font-size:12px;line-height:1.6;margin:12px 0}.anniversary-note a{color:var(--accent)}
-.news-card.anniversary-card p{-webkit-line-clamp:4}
 .news-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px}
 .news-card{background:var(--surface);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column;transition:background .15s}
 .news-card:hover{background:var(--surface-2)}
@@ -283,3 +281,5 @@ dialog h2{font-weight:800;font-size:24px;line-height:1.25}dialog p{font-size:14p
 #feedback-term-form{display:grid;gap:10px;margin-top:22px}#feedback-term-form label{font-size:14px}#feedback-term{width:100%;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;color:var(--text)}
 .feedback-undo{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--player-gap,0px) + 24px);z-index:125;display:flex;gap:12px;align-items:center;padding:12px 16px;background:var(--surface-2);color:var(--text);border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 28px #0008;width:max-content;max-width:calc(100vw - 24px);font-size:13px}.feedback-undo>span{min-width:0;max-width:400px}.feedback-undo .text-button{flex-shrink:0;color:var(--accent)}.feedback-undo[hidden]{display:none}
 @media(max-width:800px){.feedback-undo{bottom:calc(var(--nav-h) + var(--player-gap-extra,0px) + 20px + env(safe-area-inset-bottom))}.feedback-undo>span{max-width:190px}}
+
+.historical-license{display:block;flex-basis:100%;font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px}.card-footer .historical-license a{font-size:11px}.citations .historical-license{width:100%}#feedback-disable-anniversaries{margin-top:10px}
