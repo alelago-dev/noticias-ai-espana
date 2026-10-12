@@ -1,3 +1,5 @@
+import { translatedArticle } from './translation.js';
+
 const normalize = text => String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 export const voiceKey = voice => voice.voiceURI || `${voice.lang}:${voice.name}`;
 
@@ -34,10 +36,13 @@ export function spokenText(text) {
 // Keep the original publisher's headline; never invent one from the summary.
 export function bulletinStory(paragraph, articles, categories) {
   const cited = paragraph.sourceIds.map(id => articles.find(article => article.id === id)).filter(Boolean);
-  const article = cited[0];
+  const original = cited[0];
+  const article = original && translatedArticle(original);
   const topic = categories.find(c => c.id === article?.category)?.name || 'Actualidad';
   const title = article?.title.trim() || '';
   let body = paragraph.text.trim();
+  const originalText = original && original.title + (original.excerpt && !original.excerpt.startsWith(original.title) ? '. ' + original.excerpt : '');
+  if (original?.translation && body === originalText) body = article.title + (article.excerpt && !article.excerpt.startsWith(article.title) ? '. ' + article.excerpt : '');
   // Extractive editions already start with the headline. Read it only once.
   if (title && body.startsWith(title) && (!body[title.length] || /[\s.!?…:;]/.test(body[title.length]))) {
     body = body.slice(title.length).replace(/^[\s.!?…:;]+/, '').trim();

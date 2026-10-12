@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { api } from './handler.js';
 
 const root = fileURLToPath(new URL('../public/', import.meta.url));
-const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml' };
+const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.mp3': 'audio/mpeg' };
 http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://' + req.headers.host);
@@ -16,7 +16,7 @@ http.createServer(async (req, res) => {
       const request = new Request(url, { method: req.method, headers: req.headers, ...(req.method === 'POST' ? { body: Buffer.concat(chunks) } : {}) });
       const response = await api(request, process.env);
       res.writeHead(response.status, Object.fromEntries(response.headers));
-      res.end(await response.text());
+      res.end(Buffer.from(await response.arrayBuffer()));
       return;
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }

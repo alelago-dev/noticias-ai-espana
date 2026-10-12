@@ -18,6 +18,7 @@ const paths = {
   '❋': 'M12 22V10M12 17C4 17 2 9 4 4c5 0 9 4 8 10M12 14c0-7 3-10 9-11 1 6-2 12-9 13',
   '◌': 'M9 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM21 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM1 21v-4a5 5 0 0 1 10 0v4M13 21v-4a5 5 0 0 1 10 0v4',
   '↶': 'M5 4v6h6M5 10a8 8 0 1 1 0 7', '↷': 'M19 4v6h-6M19 10a8 8 0 1 0 0 7',
+  '⏭': 'M6 5l10 7-10 7zM19 5v14', '⏮': 'M18 5L8 12l10 7zM5 5v14', '⌄': 'M6 9l6 6 6-6', '⌕': 'M21 21l-5-5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0z',
 };
 const compass = Array.from({ length: 8 }, (_, n) => `<path d="M12 2v6" transform="rotate(${n * 45} 12 12)"/>`).join('') + '<circle cx="12" cy="12" r="1.5"/>';
 function glyph(char) {
@@ -26,7 +27,7 @@ function glyph(char) {
   span.innerHTML = `<svg class="ui-icon" viewBox="0 0 24 24">${char === '✳' ? compass : '<path d="' + paths[char] + '"/>'}</svg>`;
   return span;
 }
-const chars = /[↗↻↓↑▶Ⅱ▦◖✧▱▣◎⌘⚙◈⚑◉✚▤❋◌↶↷✳]/g;
+const chars = /[↗↻↓↑▶Ⅱ▦◖✧▱▣◎⌘⚙◈⚑◉✚▤❋◌↶↷✳⏭⏮⌄⌕]/g;
 function replaceIcons() {
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   const nodes = [];
