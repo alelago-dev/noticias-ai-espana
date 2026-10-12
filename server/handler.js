@@ -88,7 +88,7 @@ export async function api(request, env = {}) {
       if (typeof input.question !== 'string' || input.question.trim().length < 3 || input.question.length > 500) return json({ error: 'Escribe una pregunta de entre 3 y 500 caracteres.' }, 400);
       const cutoff = Date.now() - 24 * 3600000;
       articles = findEvidence(input.question, news.articles.filter(a => +new Date(a.publishedAt) >= cutoff));
-      if (!articles.length) return json({ mode: 'insufficient', paragraphs: [], articles: [], message: 'No encuentro fuentes suficientes en las noticias recientes para responder. Prueba con otro tema o consulta los medios originales.' });
+      if (!articles.length) return json({ mode: 'insufficient', paragraphs: [], articles: [], message: 'No encuentro noticias que coincidan con el tema consultado en las fuentes de las últimas 24 horas. Puedes preguntar por cualquier país, pero la cobertura depende de los medios disponibles. Esto no significa que no existan noticias sobre ese tema.' });
     } else {
       const count = input.length === 'long' ? 20 : input.length === 'short' ? 6 : 12;
       if (input.scope && !['espana', 'mundo', 'personal'].includes(input.scope)) return json({ error: 'El ámbito no es válido.' }, 400);

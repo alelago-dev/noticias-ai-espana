@@ -158,17 +158,29 @@ export async function getNews(fetcher = fetch, { force = false } = {}) {
 const stopwords = new Set('que como las los del una uno unos unas por para con sin sobre mas esta este estos estas hay son fue han hoy noticias noticia quiero saber dime puedes pasa estan ocurre actualidad ultimas ultima ultimos ultimo recientes reciente novedades informacion cuentame'.split(' '));
 const aiTerms = ['inteligencia artificial', 'artificial intelligence', 'ia', 'ai', 'openai', 'chatgpt', 'anthropic', 'claude', 'gemini', 'deepseek', 'llm', 'modelo de lenguaje', 'modelos de lenguaje'];
 const containsTerm = (text, term) => (' ' + text + ' ').includes(' ' + term + ' ');
+function clubSubject(question) {
+  const match = question.match(/\bclub(?: de futbol)?\s+(?:(?:atletico|deportivo)\s+(?!de\b))?(.+?)(?=\s+(?:de|en|hoy|ayer|ultimas|recientes|noticias|actualidad|como|que|cuando)\b|$)/);
+  return match?.[1]?.trim() || '';
+}
 export function findEvidence(question, articles) {
   // The phrase and its short acronyms are one topic, not two mandatory words.
   // Do not match "ia" inside unrelated words such as Galicia or inmobiliaria.
   const normalized = normalizeText(cleanText(question)).replace(/\b(?:inteligencia artificial|artificial intelligence|ai)\b/g, 'ia');
-  const tokens = [...new Set(normalized.split(' ').filter(w => (w.length >= 3 || w === 'ia') && !stopwords.has(w)))];
+  const club = clubSubject(normalized);
+  const atlantaArgentina = club === 'atlanta';
+  const descriptors = club ? ['club', ...(!containsTerm(club, 'atletico') ? ['atletico'] : []), ...(!containsTerm(club, 'deportivo') ? ['deportivo'] : []), ...(atlantaArgentina ? ['buenos', 'aires', 'argentina'] : [])] : [];
+  const tokens = [...new Set(normalized.split(' ').filter(w => (w.length >= 3 || w === 'ia') && !stopwords.has(w) && !descriptors.includes(w)))];
   if (!tokens.length) return [];
   const score = a => {
     const text = normalizeText(a.title + ' ' + (a.excerpt || ''));
+    // A club's actual name is mandatory, not merely words like "club" and
+    // "atlético". An Argentine Atlanta query must not resolve to the US city.
+    if (club && (!containsTerm(text, club) || !(a.category === 'deportes' || a.categories?.includes('deportes') || /\b(club|futbol|football|soccer|equipo|partido|jugador|jugadores|liga|entrenador|fichaje|bohemio|bohemios)\b/.test(text)))) return 0;
+    if (atlantaArgentina && !containsTerm(text, 'club atletico atlanta') &&
+      (!['buenos aires', 'argentina', 'villa crespo', 'bohemio', 'bohemios', 'primera nacional'].some(term => containsTerm(text, term)) || containsTerm(text, 'atlanta united'))) return 0;
     const hasAI = aiTerms.some(term => containsTerm(text, term));
     if (tokens.includes('ia') && !hasAI) return 0;
     return tokens.filter(w => w === 'ia' ? hasAI : containsTerm(text, w)).length;
   };
-  return articles.map(a => ({ a, s: score(a) })).filter(x => x.s >= Math.min(2, tokens.length)).sort((a, b) => b.s - a.s).slice(0, 6).map(x => x.a);
+  return articles.map(a => ({ a, s: score(a) })).filter(x => x.s >= Math.max(1, Math.ceil(tokens.length * .75))).sort((a, b) => b.s - a.s).slice(0, 6).map(x => x.a);
 }

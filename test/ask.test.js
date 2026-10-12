@@ -27,6 +27,32 @@ test('AI topic matching preserves other constraints and does not return unrelate
   assert.equal(findEvidence('Noticias de arte',[{title:'Es parte del debate',excerpt:''}]).length,0);
 });
 
+test('The named Argentine Atlanta club never resolves to Atlético Madrid, US teams or the US city',()=>{
+  const candidates = [
+    {id:'madrid',title:'El Atlético de Madrid Femenino entra en una categoría global',excerpt:'El club deja huella en el deporte.'},
+    {id:'city',title:'Atlanta ofrece nuevos vuelos a Buenos Aires',excerpt:'Turismo entre Estados Unidos y Argentina.'},
+    {id:'united',title:'Atlanta United ficha un jugador de Argentina',excerpt:'Procede de Buenos Aires.'},
+    {id:'club',title:'El Club Atlético Atlanta presenta su plantilla',excerpt:'El equipo empieza a entrenar.'},
+    {id:'bohemio',title:'Atlanta ganó su partido',excerpt:'El Bohemio suma puntos en la Primera Nacional.'},
+  ];
+  assert.deepEqual(findEvidence('Club atlético Atlanta de buenos aires',candidates).map(a=>a.id),['club','bohemio']);
+  assert.equal(findEvidence('Club atlético Atlanta de buenos aires',candidates.slice(0,3)).length,0);
+  assert.equal(findEvidence('Noticias del club Atlanta de Buenos Aires sobre fichajes',candidates.slice(3)).length,0,'extra constraints are retained');
+});
+
+test('Club names and international topics are matched without an implicit Spain restriction',()=>{
+  const candidates = [
+    {id:'river',title:'River Plate gana su partido en Argentina',excerpt:'El club celebra el resultado.',coverage:'mundo'},
+    {id:'other',title:'Otro club atlético ganó su partido',excerpt:'Se juega en Buenos Aires.',coverage:'mundo'},
+    {id:'travel',title:'Barcelona inaugura una ruta turística',excerpt:'Un recorrido por museos.',coverage:'espana'},
+    {id:'barca',title:'Barcelona anuncia un fichaje',excerpt:'El equipo prepara su temporada.',coverage:'espana'},
+  ];
+  assert.deepEqual(findEvidence('Club River Plate',candidates).map(a=>a.id),['river']);
+  assert.deepEqual(findEvidence('Club Barcelona',candidates).map(a=>a.id),['barca']);
+  assert.deepEqual(findEvidence('Noticias sobre Argentina',candidates).map(a=>a.id),['river']);
+  assert.equal(findEvidence('Club Atlético Atlanta de Buenos Aires',candidates).length,0);
+});
+
 test('The existing Gemini configuration answers questions using only supplied RSS and valid citations',async()=>{
   let requests=0;
   const result=await synthesize(articles.slice(0,2),env,'¿Qué noticias hay sobre inteligencia artificial?',async(url,init)=>{
@@ -71,7 +97,7 @@ test('The screenshot question works through the API with Gemini, stays within 24
       assert.equal(prompt.articles[0].title,'Una película utiliza IA');
       return modelResponse([{text:'Una película utiliza IA, según Xataka.',sourceIds:[prompt.articles[0].id]}]);
     }
-    const feed=href.includes('xataka.com') ? `<item><title>Una película utiliza IA</title><description>La productora explica su uso.</description><link>https://www.xataka.com/cine/reciente</link><pubDate>${date(1)}</pubDate></item><item><title>OpenAI publica un modelo</title><link>https://www.xataka.com/ia/antigua</link><pubDate>${date(30)}</pubDate></item>` : '';
+    const feed=href.includes('xataka.com') ? `<item><title>Una película utiliza IA</title><description>La productora explica su uso.</description><link>https://www.xataka.com/cine/reciente</link><pubDate>${date(1)}</pubDate></item><item><title>OpenAI publica un modelo</title><link>https://www.xataka.com/ia/antigua</link><pubDate>${date(30)}</pubDate></item>` : href.includes('20minutos.es') ? `<item><title>El Atlético de Madrid Femenino deja huella</title><description>Un club que gana títulos.</description><link>https://www.20minutos.es/deportes/club</link><pubDate>${date(1)}</pubDate></item>` : '';
     return new Response('<rss><channel>'+feed+'</channel></rss>');
   };
   const ask=(question,config=env)=>api(new Request('https://brujula.test/api/ask',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question})}),config);
@@ -82,6 +108,8 @@ test('The screenshot question works through the API with Gemini, stays within 24
     assert.equal(result.mode,'ai');assert.equal(result.articles.length,1);assert.equal(result.message,null);
     assert.equal(result.paragraphs[0].sourceIds[0],result.articles[0].id);
     assert.equal((await(await ask('Elecciones en Japón')).json()).mode,'insufficient');assert.equal(modelCalls,1);
+    const atlanta=await(await ask('Club atlético Atlanta de Buenos Aires')).json();
+    assert.equal(atlanta.mode,'insufficient');assert.deepEqual(atlanta.articles,[]);assert.match(atlanta.message,/cualquier país/);assert.equal(modelCalls,1);
     fail=true;
     const fallback=await(await ask('Noticias sobre IA')).json();
     assert.equal(fallback.mode,'extractive');assert.match(fallback.message,/No se pudo redactar/);assert.ok(!fallback.message.includes('activar'));
