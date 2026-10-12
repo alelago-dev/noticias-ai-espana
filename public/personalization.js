@@ -1,3 +1,4 @@
+import { normalizeFeedback, isHiddenArticle } from './news-feedback.js';
 import { classifyMusic, musicGenres } from './music-filters.js';
 export { musicGenres };
 const topic = (id, name, words) => ({ id, name, words: words.split('|') });
@@ -174,6 +175,7 @@ export function normalizePreferences(input = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) input = {};
   return Object.fromEntries(categories.map(c => [c.id, Number.isInteger(input[c.id]) && input[c.id] >= 0 && input[c.id] <= 3 ? input[c.id] : 0]));
 }
+const validFeedbackTopics = new Set(categories.flatMap(c => c.topics.map(t => c.id + ':' + t.id)));
 export function normalizeProfile(input = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) input = {};
   const topicInput = input.topics && typeof input.topics === 'object' ? input.topics : {};
@@ -187,8 +189,12 @@ export function normalizeProfile(input = {}) {
     topicMode: input.topicMode === 'strict' ? 'strict' : 'priority',
     musicGenres: Array.isArray(input.musicGenres) ? [...new Set(input.musicGenres.filter(id => musicGenres.some(g => g.id === id)))] : [],
     musicSpainOnly: input.musicSpainOnly === true,
+    ...normalizeFeedback(input, validFeedbackTopics, normalizeText),
   };
 }
+
+// Accepts a normalized profile; shared by client and backend selections.
+export const hiddenByFeedback = (article, profile) => isHiddenArticle(article, profile, normalizeText, hasTerm);
 
 export function personalize(articles, preferences, limit = 30, profileInput = {}, options = {}) {
   const p = normalizePreferences(preferences), profile = normalizeProfile(profileInput), now = options.now ?? Date.now();
@@ -196,7 +202,7 @@ export function personalize(articles, preferences, limit = 30, profileInput = {}
   const candidates = [];
   for (const a of articles) {
     const hours = (now - +new Date(a.publishedAt)) / 3600000;
-    if (!Number.isFinite(hours) || hours < -5 / 60 || hours > profile.hours || profile.excludedSources.includes(a.source)) continue;
+    if (!Number.isFinite(hours) || hours < -5 / 60 || hours > profile.hours || profile.excludedSources.includes(a.source) || hiddenByFeedback(a, profile)) continue;
     const cats = [...new Set([a.category, ...(a.categories || [])])].filter(id => p[id] > 0);
     if (!cats.length) continue;
     const isMusic = a.category === 'musica' || a.categories?.includes('musica') || a.musicGenres?.length;

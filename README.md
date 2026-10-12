@@ -15,6 +15,7 @@ Una app web instalable para móvil: abrir al salir y escuchar las noticias princ
 - Priorizar una comunidad autónoma o municipio, añadir hasta diez intereses propios y elegir los medios incluidos.
 - Usar una ventana de 6, 12, 24 o 48 horas en el feed personalizado, con 24 horas por defecto.
 - Activar «solo mis subtemas» para excluir otros subtemas dentro de las categorías afinadas.
+- «No me interesa» en una tarjeta, una nota del informativo o el reproductor permite ocultar esa noticia (hasta 50 IDs recientes), excluir un subtema (hasta 20) o un nombre/frase (hasta 10). El cambio es inmediato, con Deshacer; los filtros se pueden quitar en Mis intereses y guardar. Se aplican al feed y a futuras ediciones España/Mundo/Mis temas, respetando el resto de la selección y las puntuaciones. En una edición ya abierta se saltan notas afectadas, sin borrar guardados. Son reglas explícitas sobre etiquetas y palabras del RSS, no un modelo que deduzca automáticamente gustos de un clic. Se guardan en cada navegador; no hay cuenta, sincronización ni aprendizaje compartido entre visitantes.
 - Buscar titulares, filtrar por tema, ordenar por fecha y guardar noticias en tu dispositivo.
 - Preparar una edición breve, habitual o ampliada con referencias a cada fuente.
 - Cada noticia anuncia el tema y el titular original antes del resumen y su fuente. El titular aparece también en la transcripción y el reproductor, y se lee una sola vez en las ediciones extractivas.
@@ -109,7 +110,7 @@ Para otras plataformas Node, ejecuta `npm start` detrás de HTTPS y configura la
 
 ## Probar la app
 
-https://brujula-noticias-espana.alelago.chatgpt.site (acceso privado con la cuenta propietaria).
+https://brujula-noticias-espana.alelago.chatgpt.site (acceso público por enlace).
 
 ## Estado de esta versión
 

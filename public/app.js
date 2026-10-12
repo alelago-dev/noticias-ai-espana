@@ -1,4 +1,5 @@
-import { personalize, normalizeProfile, normalizeText, musicGenres } from './personalization.js';
+import { personalize, normalizeProfile, normalizeText, musicGenres, hiddenByFeedback } from './personalization.js';
+import { FEEDBACK_LIMITS } from './news-feedback.js';
 import { selectBulletin } from './bulletin.js';
 import { NewsPlayer } from './audio-player.js';
 import { ClipPlayer } from './clip-player.js';
@@ -57,9 +58,9 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-prof
 window.addEventListener('hashchange', () => navigate(location.hash.slice(1), false));
 $('#today').textContent = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Madrid' }).format(new Date());
 
-function card(a) {
+function card(a, showFeedback = false) {
   const c = category(a.category), isSaved = saved.some(s => s.id === a.id);
-  return `<article class="news-card"><div class="card-graphic cat-${esc(a.category)}"><span>${esc(c.name)}</span><span class="category-icon" aria-hidden="true">${esc(c.icon)}</span></div><div class="card-body"><div class="card-source"><span class="source-logo">${esc(a.sourceName)}</span><span class="source-dot"></span><time datetime="${esc(a.publishedAt)}">${esc(age(a.publishedAt))}</time></div><h3><a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">${esc(a.title)}</a></h3>${a.excerpt ? `<p>${esc(a.excerpt)}</p>` : ''}${a.matchReasons?.length ? `<div class="match-reasons"><span>PARA TI</span> ${a.matchReasons.slice(0, 2).map(esc).join(' · ')}</div>` : ''}</div><div class="card-footer"><a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">Leer en ${esc(a.sourceName)} ↗</a><button class="save-button ${isSaved ? 'saved' : ''}" data-save="${esc(a.id)}" aria-label="${isSaved ? 'Quitar de guardadas' : 'Guardar noticia'}" aria-pressed="${isSaved}">${isSaved ? '▣' : '▱'}</button></div></article>`;
+  return `<article class="news-card"><div class="card-graphic cat-${esc(a.category)}"><span>${esc(c.name)}</span><span class="category-icon" aria-hidden="true">${esc(c.icon)}</span></div><div class="card-body"><div class="card-source"><span class="source-logo">${esc(a.sourceName)}</span><span class="source-dot"></span><time datetime="${esc(a.publishedAt)}">${esc(age(a.publishedAt))}</time></div><h3><a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">${esc(a.title)}</a></h3>${a.excerpt ? `<p>${esc(a.excerpt)}</p>` : ''}${a.matchReasons?.length ? `<div class="match-reasons"><span>PARA TI</span> ${a.matchReasons.slice(0, 2).map(esc).join(' · ')}</div>` : ''}</div><div class="card-footer"><a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">Leer en ${esc(a.sourceName)} ↗</a>${showFeedback ? `<button class="feedback-button" data-feedback="${esc(a.id)}" aria-label="No me interesa: ${esc(a.title)}">No me interesa</button>` : ''}<button class="save-button ${isSaved ? 'saved' : ''}" data-save="${esc(a.id)}" aria-label="${isSaved ? 'Quitar de guardadas' : 'Guardar noticia'}" aria-pressed="${isSaved}">${isSaved ? '▣' : '▱'}</button></div></article>`;
 }
 function empty(title, text, action = '') { return `<div class="empty-state"><span aria-hidden="true">✳</span><h2>${esc(title)}</h2><p>${esc(text)}</p>${action}</div>`; }
 function selectedArticles() {
@@ -70,7 +71,7 @@ function selectedArticles() {
 }
 function renderFeed() {
   const items = selectedArticles();
-  $('#feed').innerHTML = loadError ? `<div class="empty-state error-state"><span>↻</span><h2>No podemos conectar con las noticias</h2><p>${esc(loadError)}</p><button class="outline-button" id="retry-news">Intentar de nuevo</button></div>` : items.length ? items.slice(0, displayLimit).map(card).join('') : empty('Tu radar está en calma.', news.articles.length ? 'No hay noticias que coincidan. Prueba otro filtro o amplía tus intereses.' : 'No hay publicaciones recientes disponibles de los medios.', '<button class="outline-button" data-view="preferences">Elegir mis intereses ↗</button>');
+  $('#feed').innerHTML = loadError ? `<div class="empty-state error-state"><span>↻</span><h2>No podemos conectar con las noticias</h2><p>${esc(loadError)}</p><button class="outline-button" id="retry-news">Intentar de nuevo</button></div>` : items.length ? items.slice(0, displayLimit).map(a => card(a, true)).join('') : empty('Tu radar está en calma.', news.articles.length ? 'No hay noticias que coincidan. Prueba otro filtro o amplía tus intereses.' : 'No hay publicaciones recientes disponibles de los medios.', '<button class="outline-button" data-view="preferences">Elegir mis intereses ↗</button>');
   $('#retry-news')?.addEventListener('click', loadNews);
   $('#load-more').hidden = items.length <= displayLimit || !!loadError;
   const available = news.sources.filter(s => s.fresh).length;
@@ -102,7 +103,7 @@ function renderProfileControls() {
   $('#profile-city').value = draftProfile.city;
   $('#profile-hours').value = draftProfile.hours;
   $('#profile-strict').checked = draftProfile.topicMode === 'strict';
-  renderKeywords(); renderProfileSources(); renderDraftCards();
+  renderKeywords(); renderProfileSources(); renderDraftCards(); renderFeedbackSettings();
 }
 function renderProfileSources() {
   $('#profile-sources').innerHTML = config.sources.map(s => `<button data-source-toggle="${s.id}" class="topic-chip ${draftProfile.excludedSources.includes(s.id) ? '' : 'selected'}" aria-pressed="${!draftProfile.excludedSources.includes(s.id)}">${draftProfile.excludedSources.includes(s.id) ? '' : '<span aria-hidden="true">✓</span> '}${esc(s.name)}</button>`).join('');
@@ -174,6 +175,7 @@ $('#profile-sources').onclick = e => {
   renderProfileSources(); updateSaveStatus();
 };
 $('#save-preferences').onclick = () => {
+  feedbackUndo = null; $('#feedback-undo').hidden = true;
   preferences = { ...draftPreferences }; profile = normalizeProfile(draftProfile);
   saveLocal('brujula-interests', preferences); saveLocal('brujula-profile', profile);
   draftProfile = normalizeProfile(profile);
@@ -185,7 +187,7 @@ $('#search').addEventListener('input', () => { displayLimit = 9; renderFeed(); }
 $('#sort').onchange = renderFeed;
 $('#load-more').onclick = () => { displayLimit += 9; renderFeed(); };
 
-function renderSaved() { $('#saved-count').textContent = saved.length; $('#saved-feed').innerHTML = saved.length ? saved.map(card).join('') : empty('Guarda lo que merece otra lectura.', 'Pulsa el marcador de una noticia para encontrarla aquí más tarde.', '<button class="outline-button" data-view="home">Explorar mi actualidad ↗</button>'); }
+function renderSaved() { $('#saved-count').textContent = saved.length; $('#saved-feed').innerHTML = saved.length ? saved.map(a => card(a)).join('') : empty('Guarda lo que merece otra lectura.', 'Pulsa el marcador de una noticia para encontrarla aquí más tarde.', '<button class="outline-button" data-view="home">Explorar mi actualidad ↗</button>'); }
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-save]'); if (!b) return;
   const found = saved.find(a => a.id === b.dataset.save);
@@ -193,6 +195,83 @@ document.addEventListener('click', e => {
   else { const a = news.articles.find(a => a.id === b.dataset.save); if (!a) return; if (saved.length >= 100) { toast('Puedes guardar hasta 100 noticias. Quita alguna para añadir otra.'); return; } saved.unshift(a); toast('Guardada para volver con calma.'); }
   saveLocal('brujula-saved', saved); renderSaved(); renderFeed();
 });
+let feedbackArticle = null, feedbackUndo = null;
+function feedbackSnapshot(value) {
+  return { hiddenArticles: [...value.hiddenArticles], blockedTopics: [...value.blockedTopics], blockedTerms: [...value.blockedTerms] };
+}
+function topicName(id) {
+  const [categoryId, topicId] = id.split(':');
+  const c = config.categories.find(c => c.id === categoryId);
+  return c?.topics.find(t => t.id === topicId)?.name || id;
+}
+function renderFeedbackSettings() {
+  $('#feedback-rules').innerHTML = [
+    ...draftProfile.blockedTopics.map(t => `<button class="topic-chip selected" data-remove-feedback-topic="${esc(t)}" aria-label="Volver a incluir ${esc(topicName(t))}">${esc(topicName(t))} ×</button>`),
+    ...draftProfile.blockedTerms.map((t, i) => `<button class="topic-chip selected" data-remove-feedback-term="${i}" aria-label="Volver a incluir ${esc(t)}">${esc(t)} ×</button>`),
+  ].join('');
+  const count = draftProfile.hiddenArticles.length;
+  $('#feedback-hidden-count').textContent = count ? count + ' noticias ocultas en este navegador.' : 'No tienes noticias ocultas.';
+  $('#feedback-clear-hidden').hidden = !count;
+}
+function openFeedback(id) {
+  feedbackArticle = news.articles.find(a => a.id === id) || playerEdition?.articles.find(a => a.id === id);
+  if (!feedbackArticle) return;
+  $('#feedback-headline').textContent = feedbackArticle.title;
+  const topics = [...new Set(feedbackArticle.topics || [])].filter(t => config.categories.some(c => c.topics.some(x => c.id + ':' + x.id === t)));
+  $('#feedback-topics').innerHTML = topics.length ? `<h3>No mostrar más este subtema</h3>${topics.map(t => `<button class="topic-chip" data-block-topic="${esc(t)}">${esc(topicName(t))}</button>`).join('')}` : '';
+  $('#feedback-term').value = ''; $('#feedback-error').textContent = '';
+  $('#feedback-dialog').showModal();
+}
+function paragraphHidden(paragraph, currentEdition) {
+  if (!paragraph?.sourceIds.length || !currentEdition) return false;
+  return paragraph.sourceIds.every(id => { const a = currentEdition.articles.find(a => a.id === id); return a && hiddenByFeedback(a, profile); });
+}
+function persistFeedback(next, message, undo = true) {
+  if (undo) feedbackUndo = feedbackSnapshot(profile);
+  profile = normalizeProfile({ ...profile, ...next });
+  draftProfile = normalizeProfile({ ...draftProfile, ...next });
+  saveLocal('brujula-profile', profile);
+  audioEditions.clear();
+  renderFeed(); prepareMorning(); renderFeedbackSettings(); updateSaveStatus();
+  if (playerEdition && ['playing', 'loading', 'paused'].includes(activePlayer?.status)) {
+    if (['playing', 'loading'].includes(activePlayer.status) && paragraphHidden(playerEdition.paragraphs[activePlayer.index], playerEdition)) { activePlayer.pause(); if (activePlayer === clipPlayer) clipAudio.pause(); activePlayer.next(); }
+  } else {
+    edition = null;
+    $('#edition-content').innerHTML = empty('Tu selección está más afinada.', 'Prepara una nueva edición con tus filtros actualizados.');
+  }
+  $('#feedback-result').textContent = message;
+  $('#feedback-undo').hidden = !undo;
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-feedback]'); if (b) openFeedback(b.dataset.feedback); });
+$('#feedback-close').onclick = () => $('#feedback-dialog').close();
+$('#feedback-hide').onclick = () => {
+  if (!feedbackArticle) return;
+  const next = [feedbackArticle.id, ...profile.hiddenArticles.filter(id => id !== feedbackArticle.id)].slice(0, FEEDBACK_LIMITS.hiddenArticles);
+  $('#feedback-dialog').close(); persistFeedback({ hiddenArticles: next }, 'Noticia oculta. Tu selección queda guardada.');
+};
+$('#feedback-topics').onclick = e => {
+  const b = e.target.closest('[data-block-topic]'); if (!b) return;
+  if (profile.blockedTopics.length >= FEEDBACK_LIMITS.blockedTopics) { $('#feedback-error').textContent = 'Puedes excluir hasta veinte subtemas. Quita uno en Mis intereses.'; return; }
+  const next = [...new Set([...profile.blockedTopics, b.dataset.blockTopic])];
+  $('#feedback-dialog').close(); persistFeedback({ blockedTopics: next }, 'Dejarás de recibir: ' + topicName(b.dataset.blockTopic) + '.');
+};
+$('#feedback-term-form').onsubmit = e => {
+  e.preventDefault(); const value = $('#feedback-term').value.trim();
+  if (normalizeText(value).length < 3) { $('#feedback-error').textContent = 'Escribe al menos tres letras.'; return; }
+  if (profile.blockedTerms.length >= FEEDBACK_LIMITS.blockedTerms) { $('#feedback-error').textContent = 'Puedes excluir hasta diez nombres o frases. Quita uno en Mis intereses.'; return; }
+  const next = [...profile.blockedTerms.filter(t => normalizeText(t) !== normalizeText(value)), value];
+  $('#feedback-dialog').close(); persistFeedback({ blockedTerms: next }, 'No mostraremos noticias que mencionen «' + value + '».');
+};
+$('#feedback-undo-button').onclick = () => { if (!feedbackUndo) return; const previous = feedbackUndo; feedbackUndo = null; persistFeedback(previous, '', false); toast('Último cambio deshecho.'); };
+$('#feedback-undo-close').onclick = () => { $('#feedback-undo').hidden = true; };
+$('#feedback-rules').onclick = e => {
+  const topic = e.target.closest('[data-remove-feedback-topic]'), term = e.target.closest('[data-remove-feedback-term]');
+  if (topic) draftProfile.blockedTopics = draftProfile.blockedTopics.filter(t => t !== topic.dataset.removeFeedbackTopic);
+  else if (term) draftProfile.blockedTerms.splice(Number(term.dataset.removeFeedbackTerm), 1);
+  else return;
+  renderFeedbackSettings(); updateSaveStatus();
+};
+$('#feedback-clear-hidden').onclick = () => { draftProfile.hiddenArticles = []; renderFeedbackSettings(); updateSaveStatus(); };
 function renderSources() {
   $('#sources-grid').innerHTML = config.sources.map(s => {
     const status = news.sources.find(x => x.id === s.id);
@@ -241,7 +320,7 @@ function renderEdition() {
   const min = Math.ceil(edition.estimatedSeconds / 60);
   const mode = edition.mode === 'ai' ? 'Resumen con IA · Revisa las fuentes' : 'Selección de titulares y extractos RSS';
   const time = new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(edition.updatedAt));
-  $('#edition-content').innerHTML = `<div class="edition-header"><div><div class="eyebrow">${esc(scopeName(edition.scope))} · ÚLTIMAS ${edition.hours || profile.hours} HORAS</div><h2>Lo que ha pasado, a tu alcance.</h2><p>${min} min aprox. · ${edition.articles.length} noticias · ${new Set(edition.articles.map(a => a.source)).size} medios<br>Fuentes comprobadas a las ${time} · Hora de Madrid</p></div><button id="listen-edition" class="primary-button"><span>▶</span> Escuchar edición</button></div><p class="edition-notice">${esc(mode)}. ${esc(edition.notice || (edition.audio ? 'La duración depende del contenido disponible. Locución con voz neuronal.' : 'La duración depende del contenido disponible. La voz la proporciona tu dispositivo.'))} ${edition.mode === 'extractive' ? 'La síntesis redactada con IA está pendiente de activación.' : ''}</p><p class="edition-notice">${edition.scope === 'personal' ? 'Selección según tus intereses.' : 'Selección automática por actualidad, coincidencia de titulares entre medios y variedad de temas. La clasificación geográfica puede contener errores.'} La escucha con la pantalla bloqueada depende del navegador.</p><div class="transcript">${edition.paragraphs.map((p, i) => { const story = bulletinStory(p, edition.articles, config.categories); return `<section class="transcript-section" id="paragraph-${i}"><button class="story-listen text-button" data-listen-story="${i}" aria-label="Escuchar noticia ${i + 1}">▶ Escuchar noticia ${i + 1}</button><h3 class="story-heading">${esc(story.heading)}</h3>${story.body ? `<p>${esc(story.body)}</p>` : ''}${citations(p, edition.articles)}</section>`; }).join('')}</div>`;
+  $('#edition-content').innerHTML = `<div class="edition-header"><div><div class="eyebrow">${esc(scopeName(edition.scope))} · ÚLTIMAS ${edition.hours || profile.hours} HORAS</div><h2>Lo que ha pasado, a tu alcance.</h2><p>${min} min aprox. · ${edition.articles.length} noticias · ${new Set(edition.articles.map(a => a.source)).size} medios<br>Fuentes comprobadas a las ${time} · Hora de Madrid</p></div><button id="listen-edition" class="primary-button"><span>▶</span> Escuchar edición</button></div><p class="edition-notice">${esc(mode)}. ${esc(edition.notice || (edition.audio ? 'La duración depende del contenido disponible. Locución con voz neuronal.' : 'La duración depende del contenido disponible. La voz la proporciona tu dispositivo.'))} ${edition.mode === 'extractive' ? 'La síntesis redactada con IA está pendiente de activación.' : ''}</p><p class="edition-notice">${edition.scope === 'personal' ? 'Selección según tus intereses.' : 'Selección automática por actualidad, coincidencia de titulares entre medios y variedad de temas. La clasificación geográfica puede contener errores.'} La escucha con la pantalla bloqueada depende del navegador.</p><div class="transcript">${edition.paragraphs.map((p, i) => { const story = bulletinStory(p, edition.articles, config.categories); return `<section class="transcript-section" id="paragraph-${i}"><button class="story-listen text-button" data-listen-story="${i}" aria-label="Escuchar noticia ${i + 1}">▶ Escuchar noticia ${i + 1}</button><button class="text-button story-feedback" data-feedback="${esc(p.sourceIds[0])}">No me interesa</button><h3 class="story-heading">${esc(story.heading)}</h3>${story.body ? `<p>${esc(story.body)}</p>` : ''}${citations(p, edition.articles)}</section>`; }).join('')}</div>`;
   $('#listen-edition').onclick = () => startSpeech(0);
 }
 async function createEdition() {
@@ -318,6 +397,10 @@ function updateMusicControls() {
 function updatePlayer(state) {
   const playing = state.status === 'playing', finished = state.status === 'finished';
   const current = playerEdition?.paragraphs[state.index];
+  if (!state.previewing && ['playing', 'loading'].includes(state.status) && paragraphHidden(current, playerEdition)) {
+    const expectedPlayer = activePlayer, expectedIndex = state.index;
+    queueMicrotask(() => { if (activePlayer === expectedPlayer && activePlayer.index === expectedIndex && ['playing', 'loading'].includes(activePlayer.status)) { if (activePlayer === clipPlayer) clipAudio.pause(); activePlayer.next(); } });
+  }
   const story = current && bulletinStory(current, playerEdition.articles, config.categories);
   $('#player-title').textContent = story?.heading || 'Tu informativo Brújula';
   $('#player-label').textContent = state.previewing ? 'Probando voz · Informativo en pausa' : finished ? 'Edición terminada' : 'Noticia ' + (state.index + 1) + ' de ' + state.count + (state.voiceName ? ' · ' + state.voiceName : '') + (state.status === 'paused' ? ' · En pausa' : '') + (state.status === 'loading' ? ' · Preparando audio…' : '');
@@ -396,6 +479,7 @@ $('#player-music').onclick = () => {
 };
 $('#music-volume').oninput = e => { music.setVolume(e.target.value); saveLocal('brujula-music', { enabled: music.enabled, volume: music.volume, revision: MUSIC_REVISION }); updateMusicControls(); };
 $('#player-close').onclick = closeSpeech;
+$('#player-feedback').onclick = () => { const paragraph = playerEdition?.paragraphs[activePlayer?.index]; if (paragraph) openFeedback(paragraph.sourceIds[0]); };
 $('#player-voices').onclick = () => { navigate('edition'); $('#voice-settings').open = true; $('#voice-settings').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 document.addEventListener('click', e => { const b = e.target.closest('[data-listen-story]'); if (b) startSpeech(Number(b.dataset.listenStory)); });
 // Neural audio is a real <audio> element and should survive the page being backgrounded.

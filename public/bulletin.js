@@ -1,4 +1,4 @@
-import { normalizeText, personalize } from './personalization.js';
+import { normalizeText, personalize, normalizeProfile, hiddenByFeedback } from './personalization.js';
 
 const stopwords = new Set('para como sobre entre tras desde hasta contra segun porque pero esta este estos estas nuevo nueva nuevos nuevas mas muy sus una uno unas unos los las del que con por sin han hay son fue sera ser tiene dice afirma anuncia noticias ultima horas gobierno presidente pais mundo espana'.split(' '));
 const tokens = title => new Set(normalizeText(title).split(' ').filter(w => w.length > 3 && !stopwords.has(w)));
@@ -13,10 +13,11 @@ export function selectBulletin(articles, { scope = 'espana', hours = 12, limit =
   hours = [6, 12, 24].includes(Number(hours)) ? Number(hours) : 12;
   limit = [6, 12, 20].includes(Number(limit)) ? Number(limit) : 12;
   if (scope === 'personal') return personalize(articles, preferences, limit, { ...profile, hours }, { now, maxPerSource: 4 });
-  const excluded = new Set(profile.excludedSources || []);
+  const feedback = normalizeProfile(profile);
+  const excluded = new Set(feedback.excludedSources);
   const recent = articles.filter(a => {
     const date = +new Date(a.publishedAt);
-    return Number.isFinite(date) && date <= now + 300000 && date >= now - hours * 3600000 && !excluded.has(a.source) && a.coverage === (scope === 'mundo' ? 'mundo' : 'espana');
+    return Number.isFinite(date) && date <= now + 300000 && date >= now - hours * 3600000 && !excluded.has(a.source) && !hiddenByFeedback(a, feedback) && a.coverage === (scope === 'mundo' ? 'mundo' : 'espana');
   });
   const clusters = [];
   for (const article of recent) {
