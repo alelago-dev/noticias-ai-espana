@@ -8,6 +8,8 @@ import { extractive, validateCitations } from './ai.js';
 import { cacheGetJSON, cachePutJSON, sha256Hex } from './cache.js';
 import { bulletinStory, storyNarration, spokenText } from '../public/narration.js';
 import { voiceFor, signClip, VOICE_NAMES } from './tts.js';
+import { geminiModels } from './gemini.js';
+export { geminiModels, GEMINI_DEFAULT_MODELS } from './gemini.js';
 
 /** @typedef {{id: string, title: string, excerpt: string, sourceName?: string, publishedAt?: string, category?: string, kind?: string}} Article */
 /** @typedef {{text: string, sourceIds: string[]}} Paragraph */
@@ -41,8 +43,6 @@ function userPrompt(articles, options) {
 // New projects can no longer call gemini-2.5-* (models.list still shows them, but
 // generateContent answers 404 NOT_FOUND), so the defaults are the models Google
 // recommends for new projects. A 404 moves on to the next candidate.
-export const GEMINI_DEFAULT_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
-export const geminiModels = env => [...new Set([env.GEMINI_MODEL, ...GEMINI_DEFAULT_MODELS].filter(Boolean))];
 
 async function viaGemini(articles, env, options, fetcher) {
   const base = (env.GEMINI_ENDPOINT || 'https://generativelanguage.googleapis.com').replace(/\/$/, '');

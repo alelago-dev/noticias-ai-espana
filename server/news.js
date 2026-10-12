@@ -155,14 +155,20 @@ export async function getNews(fetcher = fetch, { force = false } = {}) {
   return inflight;
 }
 
-const stopwords = new Set('que qué como cómo las los del una uno unos unas por para con sin sobre más esta este estos estas hay son fue han hoy noticias noticia quiero saber dime puedes pasa está están ocurre actualidad'.split(' '));
+const stopwords = new Set('que como las los del una uno unos unas por para con sin sobre mas esta este estos estas hay son fue han hoy noticias noticia quiero saber dime puedes pasa estan ocurre actualidad ultimas ultima ultimos ultimo recientes reciente novedades informacion cuentame'.split(' '));
+const aiTerms = ['inteligencia artificial', 'artificial intelligence', 'ia', 'ai', 'openai', 'chatgpt', 'anthropic', 'claude', 'gemini', 'deepseek', 'llm', 'modelo de lenguaje', 'modelos de lenguaje'];
+const containsTerm = (text, term) => (' ' + text + ' ').includes(' ' + term + ' ');
 export function findEvidence(question, articles) {
-  const words = cleanText(question).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[a-z0-9]{3,}/g) || [];
-  const tokens = [...new Set(words.filter(w => !stopwords.has(w)))];
+  // The phrase and its short acronyms are one topic, not two mandatory words.
+  // Do not match "ia" inside unrelated words such as Galicia or inmobiliaria.
+  const normalized = normalizeText(cleanText(question)).replace(/\b(?:inteligencia artificial|artificial intelligence|ai)\b/g, 'ia');
+  const tokens = [...new Set(normalized.split(' ').filter(w => (w.length >= 3 || w === 'ia') && !stopwords.has(w)))];
   if (!tokens.length) return [];
   const score = a => {
-    const text = (a.title + ' ' + a.excerpt).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    return tokens.filter(w => text.includes(w)).length;
+    const text = normalizeText(a.title + ' ' + (a.excerpt || ''));
+    const hasAI = aiTerms.some(term => containsTerm(text, term));
+    if (tokens.includes('ia') && !hasAI) return 0;
+    return tokens.filter(w => w === 'ia' ? hasAI : containsTerm(text, w)).length;
   };
   return articles.map(a => ({ a, s: score(a) })).filter(x => x.s >= Math.min(2, tokens.length)).sort((a, b) => b.s - a.s).slice(0, 6).map(x => x.a);
 }

@@ -119,7 +119,7 @@ export async function api(request, env = {}) {
     const result = historical.length ? { ...generated, paragraphs: [...generated.paragraphs, ...extractive(historical)] } : generated;
     const audio = wantsAudio ? { clips: await buildClips(result, articles, categories, env, { narration, scope: input.scope, hours: Number(input.hours) || 12 }) } : undefined;
     const text = (audio ? audio.clips : result.paragraphs).map(p => p.text).join('\n\n');
-    return json({ ...result, ...(translationNotice ? { translationNotice } : {}), ...(audio ? { audio } : {}), articles, updatedAt: news.updatedAt, estimatedSeconds: Math.max(1, Math.round(text.split(/\s+/).length / 2.5)), message: path === '/api/ask' && result.mode === 'extractive' ? 'Estas son las fuentes que coinciden con tu pregunta. La respuesta redactada requiere activar la IA.' : result.paragraphs.length ? null : 'Las fuentes disponibles no permiten responder a esa pregunta.' });
+    return json({ ...result, ...(translationNotice ? { translationNotice } : {}), ...(audio ? { audio } : {}), articles, updatedAt: news.updatedAt, estimatedSeconds: Math.max(1, Math.round(text.split(/\s+/).length / 2.5)), message: path === '/api/ask' && result.mode === 'extractive' ? (llmAvailable(env) ? 'Estas son las fuentes que coinciden con tu pregunta. No se pudo redactar la respuesta ahora.' : 'Estas son las fuentes que coinciden con tu pregunta. La respuesta redactada requiere activar la IA.') : result.paragraphs.length ? null : 'Las fuentes disponibles no permiten responder a esa pregunta.' });
   }
   return json({ error: 'Ruta no encontrada.' }, 404);
 }
