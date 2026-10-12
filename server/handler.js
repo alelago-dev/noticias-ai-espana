@@ -1,7 +1,9 @@
+import { translateArticles } from './translation.js';
+import { isEnglishArticle, translatedArticle } from '../public/translation.js';
 import { musicGenres } from '../public/music-filters.js';
 import { categories, regions, sources, getNews, personalize, findEvidence } from './news.js';
 import { appendAnniversary } from '../public/anniversary-news.js';
-import { normalizeProfile } from '../public/personalization.js';
+import { normalizeProfile, hiddenByFeedback } from '../public/personalization.js';
 import { synthesize, extractive } from './ai.js';
 import { writeBroadcast, buildClips, llmAvailable } from './broadcast.js';
 import { ttsAvailable, synthesizeSpeech, verifyClip, VOICE_NAMES, MAX_CLIP_CHARS } from './tts.js';
@@ -37,10 +39,26 @@ export async function api(request, env = {}) {
     const data = await getMusicAnniversaries();
     return json({ ...data, items: filterAnniversaries(data.items, { era, kind }) }, data.available ? 200 : 503);
   }
-  if (path === '/api/config' && request.method === 'GET') return json({ musicGenres, categories: categories.map(c => ({ ...c, topics: c.topics.map(({ id, name }) => ({ id, name })) })), regions: regions.map(({ id, name }) => ({ id, name })), sources: sources.map(({ id, name, color, site }) => ({ id, name, color, site })), aiAvailable: llmAvailable(env), audioAvailable: ttsAvailable(env), audioVoices: ttsAvailable(env) ? Object.values(VOICE_NAMES) : [] });
+  if (path === '/api/config' && request.method === 'GET') return json({ translationAvailable: llmAvailable(env), musicGenres, categories: categories.map(c => ({ ...c, topics: c.topics.map(({ id, name }) => ({ id, name })) })), regions: regions.map(({ id, name }) => ({ id, name })), sources: sources.map(({ id, name, color, site }) => ({ id, name, color, site })), aiAvailable: llmAvailable(env), audioAvailable: ttsAvailable(env), audioVoices: ttsAvailable(env) ? Object.values(VOICE_NAMES) : [] });
   if (path === '/api/news' && request.method === 'GET') {
     const news = await getNews(fetch, { force: new URL(request.url).searchParams.get('refresh') === '1' });
     return json(news, news.articles.length ? 200 : 503);
+  }
+  if (path === '/api/translate') {
+    if (request.method !== 'POST') return json({ error: 'Método no permitido.' }, 405);
+    const origin = request.headers.get('origin');
+    if (origin && origin !== new URL(request.url).origin) return json({ error: 'Origen no permitido.' }, 403);
+    if (limited(request)) return json({ error: 'Has hecho varias consultas seguidas. Prueba de nuevo en un minuto.' }, 429);
+    let input;
+    try { input = await body(request); } catch { return json({ error: 'La solicitud no es válida.' }, 400); }
+    if (typeof input.id !== 'string' || !input.id.trim() || input.id.length > 80) return json({ error: 'La noticia no es válida.' }, 400);
+    const news = await getNews();
+    const article = news.articles.find(a => a.id === input.id);
+    if (!article) return json({ error: 'Esta noticia ya no está disponible entre las fuentes recientes.' }, 404);
+    if (!isEnglishArticle(article)) return json({ error: 'Esta noticia ya está en español.' }, 400);
+    if (!llmAvailable(env)) return json({ error: 'La traducción no está disponible ahora. Puedes consultar el original.' }, 503);
+    try { return json({ translation: (await translateArticles([article], env))[0] }); }
+    catch { return json({ error: 'No se pudo traducir ahora. Conservamos el texto original; puedes volver a intentarlo.' }, 502); }
   }
   if (path === '/api/tts') {
     if (request.method !== 'POST') return json({ error: 'Método no permitido.' }, 405);
@@ -82,14 +100,26 @@ export async function api(request, env = {}) {
       const count = input.length === 'long' ? 20 : input.length === 'short' ? 6 : 12;
       articles = appendAnniversary(articles, calendar, input.profile, { limit: count });
     }
+    let translationNotice;
+    if (path === '/api/edition' && llmAvailable(env) && articles.some(isEnglishArticle)) {
+      try {
+        const translations = await translateArticles(articles, env);
+        articles = articles.map(a => { const translation = translations.find(t => t.id === a.id); return translation ? { ...a, translation } : a; });
+      } catch { translationNotice = 'No se pudo traducir parte del contenido. Se conserva el original.'; }
+    }
+    if (path === '/api/edition') {
+      const profile = normalizeProfile(input.profile);
+      articles = articles.filter(a => !hiddenByFeedback(a, profile));
+      if (!articles.some(a => a.kind !== 'anniversary')) return json({ error: 'Tus filtros excluyen estas noticias. Prueba otro ámbito o revisa Mis intereses.' }, 422);
+    }
     const wantsAudio = path === '/api/edition' && input.audio === true && ttsAvailable(env);
     const narration = ['alternating', 'female', 'male'].includes(input.narration) ? input.narration : 'alternating';
-    const currentNews = articles.filter(a => a.kind !== 'anniversary'), historical = articles.filter(a => a.kind === 'anniversary');
+    const currentNews = articles.filter(a => a.kind !== 'anniversary').map(translatedArticle), historical = articles.filter(a => a.kind === 'anniversary');
     const generated = wantsAudio ? await writeBroadcast(currentNews, env, { length: input.length, scope: input.scope, hours: input.hours }) : await synthesize(currentNews, env, input.question);
     const result = historical.length ? { ...generated, paragraphs: [...generated.paragraphs, ...extractive(historical)] } : generated;
     const audio = wantsAudio ? { clips: await buildClips(result, articles, categories, env, { narration, scope: input.scope, hours: Number(input.hours) || 12 }) } : undefined;
     const text = (audio ? audio.clips : result.paragraphs).map(p => p.text).join('\n\n');
-    return json({ ...result, ...(audio ? { audio } : {}), articles, updatedAt: news.updatedAt, estimatedSeconds: Math.max(1, Math.round(text.split(/\s+/).length / 2.5)), message: path === '/api/ask' && result.mode === 'extractive' ? 'Estas son las fuentes que coinciden con tu pregunta. La respuesta redactada requiere activar la IA.' : result.paragraphs.length ? null : 'Las fuentes disponibles no permiten responder a esa pregunta.' });
+    return json({ ...result, ...(translationNotice ? { translationNotice } : {}), ...(audio ? { audio } : {}), articles, updatedAt: news.updatedAt, estimatedSeconds: Math.max(1, Math.round(text.split(/\s+/).length / 2.5)), message: path === '/api/ask' && result.mode === 'extractive' ? 'Estas son las fuentes que coinciden con tu pregunta. La respuesta redactada requiere activar la IA.' : result.paragraphs.length ? null : 'Las fuentes disponibles no permiten responder a esa pregunta.' });
   }
   return json({ error: 'Ruta no encontrada.' }, 404);
 }

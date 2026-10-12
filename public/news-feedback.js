@@ -13,6 +13,6 @@ export function isHiddenArticle(article, profile, normalizeText, hasTerm) {
   if (article.kind === 'anniversary' && profile.includeAnniversaries === false) return true;
   if (profile.hiddenArticles.includes(article.id)) return true;
   if (profile.blockedTopics.some(t => article.topics?.includes(t))) return true;
-  const text = normalizeText(article.title + ' ' + (article.excerpt || ''));
+  const text = normalizeText(article.title + ' ' + (article.excerpt || '') + (article.translation?.language === 'es' ? ' ' + article.translation.title + ' ' + article.translation.excerpt : ''));
   return profile.blockedTerms.some(term => hasTerm(text, normalizeText(term)));
 }

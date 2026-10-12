@@ -1,4 +1,5 @@
 import { personalize, normalizeProfile, normalizeText, musicGenres, hiddenByFeedback } from './personalization.js';
+import { isEnglishArticle, translatedArticle, translationMatches } from './translation.js';
 import { FEEDBACK_LIMITS } from './news-feedback.js';
 import { selectBulletin } from './bulletin.js';
 import { NewsPlayer } from './audio-player.js';
@@ -16,6 +17,9 @@ let preferences = stored('brujula-interests', { ...defaults });
 let profile = normalizeProfile(stored('brujula-profile', {}));
 let draftPreferences = { ...preferences }, draftProfile = normalizeProfile(profile);
 let saved = stored('brujula-saved', []);
+const translations = new Map(), translationBusy = new Set(), originalViews = new Set();
+const savedTranslations = stored('brujula-translations', []);
+if (Array.isArray(savedTranslations)) for (const record of savedTranslations.slice(0, 50)) if (record && typeof record.id === 'string') translations.set(record.id, record);
 if (!preferences || typeof preferences !== 'object' || Array.isArray(preferences)) preferences = { ...defaults };
 if (!Array.isArray(saved)) saved = [];
 let config = { categories: [], sources: [], aiAvailable: false };
@@ -38,7 +42,7 @@ function age(date) {
   return n < 60 ? 'Hace ' + n + ' min' : n < 1440 ? 'Hace ' + Math.floor(n / 60) + ' h' : new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short' }).format(new Date(date));
 }
 async function request(path, body) {
-  const response = await fetch(path, { ...(body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(55_000) });
+  const response = await fetch(path, { ...(body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(path === '/api/edition' ? 85_000 : 55_000) });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'No hemos podido actualizar las noticias. Revisa tu conexión e inténtalo de nuevo.');
   return data;
@@ -59,18 +63,37 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-prof
 window.addEventListener('hashchange', () => navigate(location.hash.slice(1), false));
 $('#today').textContent = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Madrid' }).format(new Date());
 
-function card(a, showFeedback = false) {
+function withTranslation(a) {
+  const record = translations.get(a.id);
+  return translationMatches(record, a) ? { ...a, translation: record.translation } : a;
+}
+function cacheTranslation(a, translation) {
+  translations.delete(a.id);
+  translations.set(a.id, { id: a.id, originalTitle: a.title, originalExcerpt: a.excerpt || '', translation });
+  while (translations.size > 50) translations.delete(translations.keys().next().value);
+  saveLocal('brujula-translations', [...translations.values()]);
+}
+function absorbTranslations(result) {
+  for (const a of result.articles || []) if (a.translation) cacheTranslation(a, a.translation);
+  renderFeed();
+  return result;
+}
+function card(original, showFeedback = false) {
+  const translated = withTranslation(original), available = translated.translation?.language === 'es';
+  const showOriginal = originalViews.has(original.id);
+  const a = available && !showOriginal ? translatedArticle(translated) : original;
+  const translateControl = isEnglishArticle(original) ? `<div class="translation-control"><button class="text-button" data-translate="${esc(original.id)}" ${translationBusy.has(original.id) ? 'disabled' : ''} aria-busy="${translationBusy.has(original.id)}">${translationBusy.has(original.id) ? 'Traduciendo…' : available ? (showOriginal ? 'Ver en español' : 'Ver original en inglés') : 'Traducir al español'}</button>${available && !showOriginal ? '<small>Traducción automática del titular y extracto · Revisa el original</small>' : ''}</div>` : '';
   const c = category(a.category), isSaved = saved.some(s => s.id === a.id);
   const historical = a.kind === 'anniversary';
   const timeLabel = historical ? 'Efeméride del ' + new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long', timeZone: 'Europe/Madrid' }).format(new Date(a.calendarDate + 'T12:00:00Z')) : age(a.publishedAt);
-  return `<article class="news-card"><div class="card-graphic cat-${esc(a.category)}"><span>${historical ? 'Efemérides musicales' : esc(c.name)}</span><span class="category-icon" aria-hidden="true">${esc(c.icon)}</span></div><div class="card-body"><div class="card-source"><span class="source-logo">${esc(a.sourceName)}</span><span class="source-dot"></span><time datetime="${esc(historical ? a.calendarDate : a.publishedAt)}">${esc(timeLabel)}</time></div><h3><a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">${esc(a.title)}</a></h3>${a.excerpt ? `<p>${esc(a.excerpt)}</p>` : ''}${a.matchReasons?.length ? `<div class="match-reasons"><span>PARA TI</span> ${a.matchReasons.slice(0, 2).map(esc).join(' · ')}</div>` : ''}</div><div class="card-footer"><a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">Leer en ${esc(a.sourceName)} ↗</a>${showFeedback ? `<button class="feedback-button" data-feedback="${esc(a.id)}" aria-label="No me interesa: ${esc(a.title)}">No me interesa</button>` : ''}<button class="save-button ${isSaved ? 'saved' : ''}" data-save="${esc(a.id)}" aria-label="${isSaved ? 'Quitar de guardadas' : 'Guardar noticia'}" aria-pressed="${isSaved}">${isSaved ? '▣' : '▱'}</button>${historical ? `<small class="historical-license">Texto histórico de Wikipedia · <a href="${esc(safeURL(a.licenseURL))}" target="_blank" rel="noopener noreferrer">${esc(a.license)}</a></small>` : ''}</div></article>`;
+  return `<article class="news-card"><div class="card-graphic cat-${esc(a.category)}"><span>${historical ? 'Efemérides musicales' : esc(c.name)}</span><span class="category-icon" aria-hidden="true">${esc(c.icon)}</span></div><div class="card-body"><div class="card-source"><span class="source-logo">${esc(a.sourceName)}</span><span class="source-dot"></span><time datetime="${esc(historical ? a.calendarDate : a.publishedAt)}">${esc(timeLabel)}</time></div><h3><a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">${esc(a.title)}</a></h3>${a.excerpt ? `<p>${esc(a.excerpt)}</p>` : ''}${translateControl}${a.matchReasons?.length ? `<div class="match-reasons"><span>PARA TI</span> ${a.matchReasons.slice(0, 2).map(esc).join(' · ')}</div>` : ''}</div><div class="card-footer"><a href="${esc(safeURL(a.url))}" target="_blank" rel="noopener noreferrer">Leer en ${esc(a.sourceName)} ↗</a>${showFeedback ? `<button class="feedback-button" data-feedback="${esc(a.id)}" aria-label="No me interesa: ${esc(a.title)}">No me interesa</button>` : ''}<button class="save-button ${isSaved ? 'saved' : ''}" data-save="${esc(a.id)}" aria-label="${isSaved ? 'Quitar de guardadas' : 'Guardar noticia'}" aria-pressed="${isSaved}">${isSaved ? '▣' : '▱'}</button>${historical ? `<small class="historical-license">Texto histórico de Wikipedia · <a href="${esc(safeURL(a.licenseURL))}" target="_blank" rel="noopener noreferrer">${esc(a.license)}</a></small>` : ''}</div></article>`;
 }
 function empty(title, text, action = '') { return `<div class="empty-state"><span aria-hidden="true">✳</span><h2>${esc(title)}</h2><p>${esc(text)}</p>${action}</div>`; }
 function selectedArticles() {
   const items = news.articles.filter(a => filter === 'all' || a.category === filter || a.categories?.includes(filter));
   const query = normalizeText($('#search').value);
-  const matching = query ? items.filter(a => normalizeText(a.title + ' ' + a.excerpt + ' ' + a.sourceName).includes(query)) : items;
-  const selected = personalize(matching, preferences, matching.length, profile, { sort: $('#sort').value });
+  const matching = query ? items.filter(a => normalizeText(a.title + ' ' + a.excerpt + ' ' + translatedArticle(withTranslation(a)).title + ' ' + translatedArticle(withTranslation(a)).excerpt + ' ' + a.sourceName).includes(query)) : items;
+  const selected = personalize(matching.map(withTranslation), preferences, matching.length, profile, { sort: $('#sort').value });
   const historical = chooseAnniversary(musicAnniversaries.data, profile);
   if (historical && ['all', 'musica'].includes(filter) && (!query || normalizeText(historical.title + ' ' + historical.excerpt + ' ' + historical.sourceName).includes(query))) selected.splice(Math.min(3, selected.length), 0, historical);
   return selected;
@@ -202,8 +225,33 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-save]'); if (!b) return;
   const found = saved.find(a => a.id === b.dataset.save);
   if (found) { saved = saved.filter(a => a.id !== found.id); toast('Noticia quitada de guardadas.'); }
-  else { const a = findArticle(b.dataset.save); if (!a) return; if (saved.length >= 100) { toast('Puedes guardar hasta 100 noticias. Quita alguna para añadir otra.'); return; } saved.unshift(a); toast('Guardada para volver con calma.'); }
+  else { const foundArticle = findArticle(b.dataset.save); const a = foundArticle && withTranslation(foundArticle); if (!a) return; if (saved.length >= 100) { toast('Puedes guardar hasta 100 noticias. Quita alguna para añadir otra.'); return; } saved.unshift(a); toast('Guardada para volver con calma.'); }
   saveLocal('brujula-saved', saved); renderSaved(); renderFeed();
+});
+document.addEventListener('click', async e => {
+  const button = e.target.closest('[data-translate]'); if (!button) return;
+  const id = button.dataset.translate;
+  const a = findArticle(id) || saved.find(a => a.id === id); if (!a || translationBusy.has(id)) return;
+  if (withTranslation(a).translation?.language === 'es') {
+    if (originalViews.has(id)) originalViews.delete(id); else originalViews.add(id);
+    renderFeed(); renderSaved();
+    $(`#view-${view} [data-translate="${id}"]`)?.focus({ preventScroll: true });
+    return;
+  }
+  if (config.translationAvailable === false) { toast('La traducción no está disponible ahora. Puedes leer el original.'); return; }
+  translationBusy.add(id); renderFeed(); renderSaved();
+  try {
+    const result = await request('/api/translate', { id });
+    if (result.translation?.id !== id || result.translation.originalTitle !== a.title || result.translation.originalExcerpt !== (a.excerpt || '')) throw new Error('La noticia cambió o no se pudo comprobar la traducción. Actualiza las noticias y vuelve a intentarlo.');
+    cacheTranslation(a, result.translation); originalViews.delete(id);
+    saved = saved.map(s => s.id === id ? { ...s, translation: result.translation } : s);
+    saveLocal('brujula-saved', saved);
+    prepareMorning();
+  } catch (error) { toast(error.message); }
+  finally {
+    translationBusy.delete(id); renderFeed(); renderSaved();
+    $(`#view-${view} [data-translate="${id}"]`)?.focus({ preventScroll: true });
+  }
 });
 let feedbackArticle = null, feedbackUndo = null;
 function feedbackSnapshot(value) {
@@ -314,10 +362,10 @@ function citations(paragraph, articles) {
 function prepareMorning() {
   const length = $('#bulletin-length').value;
   const limit = length === 'short' ? 6 : length === 'long' ? 20 : 12;
-  const current = loadError ? [] : selectBulletin(news.articles, { scope: bulletinScope, hours: bulletinHours, limit, preferences, profile });
+  const current = loadError ? [] : selectBulletin(news.articles.map(withTranslation), { scope: bulletinScope, hours: bulletinHours, limit, preferences, profile });
   const articles = appendAnniversary(current, musicAnniversaries.data, profile, { limit });
-  const paragraphs = articles.map(a => ({ text: a.title + (a.excerpt && !a.excerpt.startsWith(a.title) ? '. ' + a.excerpt : ''), sourceIds: [a.id] }));
-  morningEdition = paragraphs.length ? { mode: 'extractive', scope: bulletinScope, hours: bulletinHours, articles, paragraphs, updatedAt: news.updatedAt, estimatedSeconds: Math.max(1, Math.round(paragraphs.map(p => p.text).join(' ').split(/\s+/).length / 2.5)) } : null;
+  const paragraphs = articles.map(withTranslation).map(translatedArticle).map(a => ({ text: a.title + (a.excerpt && !a.excerpt.startsWith(a.title) ? '. ' + a.excerpt : ''), sourceIds: [a.id] }));
+  morningEdition = paragraphs.length ? { mode: 'extractive', scope: bulletinScope, hours: bulletinHours, articles: articles.map(withTranslation), paragraphs, updatedAt: news.updatedAt, estimatedSeconds: Math.max(1, Math.round(paragraphs.map(p => p.text).join(' ').split(/\s+/).length / 2.5)) } : null;
   $('#create-edition').disabled = !morningEdition;
   $$('[data-scope]').forEach(b => { const active = b.dataset.scope === bulletinScope; b.classList.toggle('active', active); b.setAttribute('aria-pressed', active); });
   const clock = news.updatedAt ? new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(news.updatedAt)) : '';
@@ -338,7 +386,7 @@ function renderEdition() {
   const min = Math.ceil(edition.estimatedSeconds / 60);
   const mode = edition.mode === 'ai' ? 'Resumen con IA · Revisa las fuentes' : 'Selección de titulares y extractos RSS';
   const time = new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }).format(new Date(edition.updatedAt));
-  $('#edition-content').innerHTML = `<div class="edition-header"><div><div class="eyebrow">${esc(scopeName(edition.scope))} · ÚLTIMAS ${edition.hours || profile.hours} HORAS</div><h2>Lo que ha pasado, a tu alcance.</h2><p>${min} min aprox. · ${edition.articles.length} ${edition.articles.some(a => a.kind === 'anniversary') ? 'notas' : 'noticias'} · ${new Set(edition.articles.map(a => a.source)).size} medios<br>Fuentes comprobadas a las ${time} · Hora de Madrid</p></div><button id="listen-edition" class="primary-button"><span>▶</span> Escuchar edición</button></div><p class="edition-notice">${esc(mode)}. ${esc(edition.notice || (edition.audio ? 'La duración depende del contenido disponible. Locución con voz neuronal.' : 'La duración depende del contenido disponible. La voz la proporciona tu dispositivo.'))} ${edition.mode === 'extractive' ? 'La síntesis redactada con IA está pendiente de activación.' : ''}</p><p class="edition-notice">${edition.scope === 'personal' ? 'Selección según tus intereses.' : 'Selección automática por actualidad, coincidencia de titulares entre medios y variedad de temas. La clasificación geográfica puede contener errores.'} La escucha con la pantalla bloqueada depende del navegador.</p><div class="transcript">${edition.paragraphs.map((p, i) => { const story = bulletinStory(p, edition.articles, config.categories); return `<section class="transcript-section" id="paragraph-${i}"><button class="story-listen text-button" data-listen-story="${i}" aria-label="Escuchar noticia ${i + 1}">▶ Escuchar noticia ${i + 1}</button><button class="text-button story-feedback" data-feedback="${esc(p.sourceIds[0])}">No me interesa</button><h3 class="story-heading">${esc(story.heading)}</h3>${story.body ? `<p>${esc(story.body)}</p>` : ''}${citations(p, edition.articles)}</section>`; }).join('')}</div>`;
+  $('#edition-content').innerHTML = `<div class="edition-header"><div><div class="eyebrow">${esc(scopeName(edition.scope))} · ÚLTIMAS ${edition.hours || profile.hours} HORAS</div><h2>Lo que ha pasado, a tu alcance.</h2><p>${min} min aprox. · ${edition.articles.length} ${edition.articles.some(a => a.kind === 'anniversary') ? 'notas' : 'noticias'} · ${new Set(edition.articles.map(a => a.source)).size} medios<br>Fuentes comprobadas a las ${time} · Hora de Madrid</p></div><button id="listen-edition" class="primary-button"><span>▶</span> Escuchar edición</button></div><p class="edition-notice">${esc(mode)}. ${esc(edition.notice || (edition.audio ? 'La duración depende del contenido disponible. Locución con voz neuronal.' : 'La duración depende del contenido disponible. La voz la proporciona tu dispositivo.'))} ${esc(edition.translationNotice || '')} ${edition.mode === 'extractive' ? 'La síntesis redactada con IA está pendiente de activación.' : ''}</p><p class="edition-notice">${edition.scope === 'personal' ? 'Selección según tus intereses.' : 'Selección automática por actualidad, coincidencia de titulares entre medios y variedad de temas. La clasificación geográfica puede contener errores.'} La escucha con la pantalla bloqueada depende del navegador.</p><div class="transcript">${edition.paragraphs.map((p, i) => { const story = bulletinStory(p, edition.articles, config.categories); return `<section class="transcript-section" id="paragraph-${i}"><button class="story-listen text-button" data-listen-story="${i}" aria-label="Escuchar noticia ${i + 1}">▶ Escuchar noticia ${i + 1}</button><button class="text-button story-feedback" data-feedback="${esc(p.sourceIds[0])}">No me interesa</button><h3 class="story-heading">${esc(story.heading)}</h3>${p.sourceIds.some(id => edition.articles.find(a => a.id === id)?.translation) ? '<small class="translation-caption">Titular y extracto traducidos al español · El enlace abre el medio original</small>' : ''}${story.body ? `<p>${esc(story.body)}</p>` : ''}${citations(p, edition.articles)}</section>`; }).join('')}</div>`;
   $('#listen-edition').onclick = () => startSpeech(0);
 }
 async function createEdition() {
@@ -347,7 +395,7 @@ async function createEdition() {
   navigate('edition'); editionBusy = true; $('#regenerate').disabled = true;
   $('#edition-content').innerHTML = empty('Preparando tu edición…', 'Seleccionamos noticias recientes de ' + scopeName(bulletinScope) + ' y conservamos sus fuentes.');
   closeSpeech(); edition = null;
-  try { const result = await request('/api/edition', { preferences, profile, scope, hours, length: $('#edition-length').value, audio: config.audioAvailable, narration: narration.mode }); edition = { ...result, scope, hours }; renderEdition(); }
+  try { const result = await request('/api/edition', { preferences, profile, scope, hours, length: $('#edition-length').value, audio: config.audioAvailable, narration: narration.mode }); edition = { ...absorbTranslations(result), scope, hours }; renderEdition(); }
   catch (error) { $('#edition-content').innerHTML = `<div class="empty-state error-state"><span>✳</span><h2>No hemos podido preparar la edición.</h2><p>${esc(error.message)}</p><button class="outline-button" data-view="preferences">Revisar mis intereses ↗</button></div>`; }
   finally { editionBusy = false; $('#regenerate').disabled = false; }
 }
@@ -364,7 +412,7 @@ async function listenWithVoice() {
   $('#edition-content').innerHTML = empty('Preparando tu informativo…', 'Redactamos el guion con las noticias de ' + scopeName(scope) + ' y preparamos la voz. Suele tardar unos segundos.');
   try {
     const result = await request('/api/edition', { preferences, profile, scope, hours, length, audio: true, narration: narration.mode });
-    edition = { ...result, scope, hours }; audioEditions.set(key, { at: Date.now(), edition });
+    edition = { ...absorbTranslations(result), scope, hours }; audioEditions.set(key, { at: Date.now(), edition });
   } catch {
     edition = morningEdition; toast('No se pudo preparar la voz neuronal. Leemos los titulares con la voz de tu dispositivo.');
   } finally { editionBusy = false; }

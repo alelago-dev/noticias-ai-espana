@@ -72,6 +72,8 @@ function musicTopicMetadata(text) {
 
 export function parseFeed(xml, source, now = Date.now()) {
   const data = parser.parse(xml);
+  const feedLanguage = scalar(data.rss?.channel?.language || data.feed?.['@_lang']);
+  const language = /^en(?:[-_]|$)/i.test(feedLanguage) ? 'en' : /^es(?:[-_]|$)/i.test(feedLanguage) ? 'es' : undefined;
   const items = data.rss?.channel?.item ?? data.feed?.entry ?? [];
   return (Array.isArray(items) ? items : [items]).flatMap((item, feedPosition) => {
     const link = Array.isArray(item.link) ? item.link.find(x => x['@_rel'] === 'alternate')?.['@_href'] : item.link?.['@_href'] || item.link;
@@ -88,7 +90,7 @@ export function parseFeed(xml, source, now = Date.now()) {
     
     let hash = 2166136261;
     for (const c of url) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619);
-    const article = annotateArticle({ id: source.id + '-' + (hash >>> 0).toString(36), title, excerpt, url, publishedAt: published.toISOString(), source: source.id, sourceName: source.name, feedPosition, generalFeed: !source.category && !source.region }, topicTags, source.category || 'espana');
+    const article = annotateArticle({ id: source.id + '-' + (hash >>> 0).toString(36), title, excerpt, url, language, publishedAt: published.toISOString(), source: source.id, sourceName: source.name, feedPosition, generalFeed: !source.category && !source.region }, topicTags, source.category || 'espana');
     if (source.category === 'musica') {
       article.category = 'musica';
       if (!article.categories.includes('musica')) article.categories.push('musica');
