@@ -17,15 +17,43 @@ const distinctiveArtists = styles.flatMap(s => s.artists).filter(a => a.split(' 
 const spanishPlaces = 'espana|spain|spanish dates|spanish tour|madrid|barcelona|bilbao|valencia|sevilla|malaga|zaragoza|granada|murcia|alicante|a coruna|la coruna|santiago de compostela|vigo|oviedo|gijon|santander|pamplona|san sebastian|donostia|vitoria|valladolid|salamanca|cordoba|cadiz|almeria|tarragona|girona|lleida|badajoz|caceres|logrono|toledo|albacete|huelva|jaen|mallorca|ibiza|menorca|tenerife|gran canaria|lanzarote|fuerteventura|benicassim'.split('|');
 const spanishFestivals = 'primavera sound barcelona|mad cool|bilbao bbk live|azkena rock|festival internacional de benicassim|sonorama|o son do camino|resurrection fest|canela party|low festival|warm up festival'.split('|');
 const liveEvent = /\b(concierto|conciertos|concert|concerts|gira|giras|tour|tours|gig|gigs|recital|recitales|festival|festivals|festivales|actuara|actuaran|tocara|tocaran|entradas|tickets|live show|live shows)\b/;
+const europeanPlaces = 'europa|europe|european tour|european dates|uk|united kingdom|reino unido|britain|england|inglaterra|scotland|escocia|wales|gales|ireland|irlanda|france|francia|germany|alemania|italy|italia|portugal|netherlands|paises bajos|holland|belgium|belgica|switzerland|suiza|austria|denmark|dinamarca|sweden|suecia|norway|noruega|finland|finlandia|poland|polonia|czech republic|chequia|greece|grecia|hungary|hungria|croatia|croacia|romania|rumania|iceland|islandia|serbia|slovakia|eslovaquia|slovenia|eslovenia|bulgaria|estonia|latvia|letonia|lithuania|lituania|luxembourg|luxemburgo|malta|cyprus|chipre|albania|montenegro|bosnia|ukraine|ucrania|london|londres|manchester|liverpool|glasgow|edinburgh|edimburgo|dublin|belfast|paris|berlin|hamburg|hamburgo|munich|amsterdam|rotterdam|brussels|bruselas|rome|roma|milan|milano|lisbon|lisboa|porto|oporto|copenhagen|copenhague|stockholm|estocolmo|oslo|helsinki|warsaw|varsovia|prague|praga|vienna|viena|athens|atenas|budapest|zurich'.split('|');
+const otherPlaces = 'australia|australian tour|australian dates|new zealand|nueva zelanda|sydney|sidney|melbourne|brisbane|perth|adelaide|auckland|wellington|north america|norteamerica|south america|sudamerica|latin america|latinoamerica|united states|estados unidos|usa|u s|us tour|us dates|american tour|canada|toronto|vancouver|new york|nueva york|los angeles|chicago|mexico|argentina|brazil|brasil|chile|colombia|buenos aires|sao paulo|rio de janeiro|bogota|lima|santiago de chile|japan|japon|tokyo|tokio|asia|singapore|singapur|south korea|corea del sur|seoul|seul|south africa|sudafrica'.split('|');
+const europeanFestivals = 'glastonbury|reading festival|leeds festival|rock en seine|rock am ring|rock im park|download festival uk|primavera sound porto|roskilde|pukkelpop|rock werchter|sziget'.split('|');
+const generalRelease = /\b(album|albums|disco|discos|single|singles|song|songs|cancion|canciones|entrevista|interview)\b/;
+
+function eventLocations(text) {
+  // Discard origin phrases: a London band visiting Australia is not a UK date.
+  text = text.replace(/\b\w+(?: \w+)? (?:band|rockers|banda|grupo)\b/g, ' ');
+  const spain = spanishPlaces.some(p => includes(text, p)) || spanishFestivals.some(p => includes(text, p));
+  const europe = spain || europeanPlaces.some(p => includes(text, p)) || europeanFestivals.some(p => includes(text, p));
+  return [...(spain ? ['spain'] : []), ...(europe ? ['europe'] : []), ...(otherPlaces.some(p => includes(text, p)) ? ['other'] : [])];
+}
+
+/** Geographic preference affects live-event news only, including general editions. */
+export function musicEventAllowed(article, region = 'europe') {
+  if (region === 'world' || article.kind === 'anniversary') return true;
+  const metadata = typeof article.musicLiveEvent === 'boolean' ? article : classifyMusic(article, '', article.category === 'musica' || article.categories?.includes('musica'));
+  const places = metadata.musicEventLocations || [];
+  // Unknown destinations stay visible in the default preference: an RSS with
+  // no location is not evidence of a foreign tour. Spain-only is stricter.
+  return !metadata.musicLiveEvent || places.includes(region) || (region === 'europe' && places.length === 0);
+}
 
 export function classifyMusic(article, metadata = '', trustedMusicFeed = false) {
   const text = normalize(article.title + ' ' + (article.excerpt || '') + ' ' + metadata);
   const isMusic = trustedMusicFeed || musicalContext.test(text) || distinctiveArtists.some(a => includes(text, a));
-  if (!isMusic) return { musicGenres: [], musicSpainEvent: false };
+  if (!isMusic) return { musicGenres: [], musicSpainEvent: false, musicLiveEvent: false, musicEventLocations: [] };
   const found = new Set(styles.filter(s => [...s.words, ...s.artists].some(w => includes(text, w))).map(s => s.id));
   if (found.has('grunge') || found.has('britpop')) found.add('alternativo');
   if (found.has('alternativo') || found.has('grunge') || found.has('britpop') || found.has('punk') || includes(text, 'indie rock')) found.add('rock');
   const musicSpainEvent = spanishFestivals.some(f => includes(text, f)) ||
     (liveEvent.test(text) && spanishPlaces.some(p => includes(text, p)));
-  return { musicGenres: [...found], musicSpainEvent };
+  const headline = normalize(article.title);
+  const musicLiveEvent = (eventLocations(headline).length > 0 && /\b(play|plays|playing|perform|performs|performing|shows)\b/.test(headline) && !generalRelease.test(headline)) || liveEvent.test(headline) || [...spanishFestivals, ...europeanFestivals].some(f => includes(headline, f)) || (!generalRelease.test(headline) && liveEvent.test(text));
+  // The destination named in the headline takes precedence over background
+  // references in the excerpt. A mixed European/Australian tour remains relevant.
+  const headlineLocations = eventLocations(headline);
+  const musicEventLocations = musicLiveEvent ? (headlineLocations.length ? headlineLocations : eventLocations(text)) : [];
+  return { musicGenres: [...found], musicSpainEvent, musicLiveEvent, musicEventLocations };
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyMusic, musicGenres } from '../public/music-filters.js';
+import { classifyMusic, musicGenres, musicEventAllowed } from '../public/music-filters.js';
 import { annotateArticle, normalizeProfile, personalize } from '../public/personalization.js';
 import { parseFeed, sources } from '../server/news.js';
 import { selectBulletin } from '../public/bulletin.js';
@@ -24,6 +24,53 @@ test('Ambiguous names and indie games do not become music news', () => {
 test('Spanish event filter requires both a live event and Spanish location', () => {
   for (const title of ['Pearl Jam anuncia conciertos en España', 'Arctic Monkeys announce tour dates in Barcelona', 'Radiohead tocará en Madrid', 'Oasis encabeza el Mad Cool']) assert.equal(classifyMusic({ title }, '', true).musicSpainEvent, true, title);
   for (const title of ['Oasis anuncia nuevo disco en Madrid', 'Pearl Jam announce concerts in London', 'Foo Fighters announce a European tour', 'El festival de cine de Barcelona', 'Primavera Sound Porto lineup announced']) assert.equal(classifyMusic({ title }).musicSpainEvent, false, title);
+});
+
+test('Live visits recognize Spain, continental Europe and the UK without turning albums into tours', () => {
+  for (const title of ['Pearl Jam concierto en Madrid', 'Radiohead announce a European tour', 'Oasis announce UK tour dates', 'The Strokes play London', 'Foo Fighters concierto en París', 'Pearl Jam at Glastonbury']) {
+    const article = music('event', title);
+    assert.equal(musicEventAllowed(article), true, title);
+    if (article.musicLiveEvent) assert.ok(article.musicEventLocations.includes('europe'), title);
+  }
+  for (const title of ['Pearl Jam announce Australian tour', 'Radiohead announce concerts in Melbourne', 'Oasis announce US tour dates in Los Angeles', 'Foo Fighters gira por Japón', 'Arctic Monkeys concierto en Buenos Aires']) {
+    const article = music('event', title);
+    assert.equal(musicEventAllowed(article), false, title);
+    assert.equal(musicEventAllowed(article, 'world'), true, title);
+  }
+  const album = annotateArticle({title:'Pearl Jam announce new album',excerpt:'Recorded in Australia after their tour in Sydney.'}, '', 'musica');
+  assert.equal(album.musicLiveEvent, false);
+  assert.equal(musicEventAllowed(album), true);
+  assert.equal(musicEventAllowed(music('unknown', 'Pearl Jam announce a tour')), true, 'unknown destination is not a foreign visit');
+});
+
+test('Headline destinations override incidental background; mixed tours and artist origins are handled', () => {
+  const classify = (title, excerpt = '') => classifyMusic({title, excerpt}, '', true);
+  assert.equal(musicEventAllowed(classify('Radiohead concerts in Sydney', 'They last played Madrid and London.')), false);
+  assert.equal(musicEventAllowed(classify('London band announce Australian tour')), false);
+  assert.equal(musicEventAllowed(classify('Australian band announce concerts in London')), true);
+  assert.equal(musicEventAllowed(classify('Pearl Jam announce tour in Australia and Europe')), true);
+  assert.equal(musicEventAllowed(classify('Oasis announce tour dates', 'Shows in Berlin and Madrid.')), true);
+  assert.equal(musicEventAllowed({...classify('Radiohead concierto en Tokio'),kind:'anniversary'}), true);
+  assert.equal(musicEventAllowed({title:'El Tour de Francia llega a París', category:'deportes'}), true);
+});
+
+test('Visit destinations affect the radar and every edition while preserving general band news', () => {
+  const items = [music('spain', 'Pearl Jam concierto Madrid'), music('uk', 'Pearl Jam concierto Londres'), music('australia', 'Pearl Jam concierto Melbourne'), music('album', 'Pearl Jam nuevo disco en Australia')];
+  const ids = list => list.map(a => a.id).sort();
+  assert.deepEqual(ids(personalize(items, {musica:3}, 10, {}, {now})), ['album','spain','uk']);
+  for (const scope of ['personal','mundo','espana']) {
+    const articles = items.map(a => ({...a,coverage:scope==='espana'?'espana':'mundo'}));
+    const opts = {scope,now,preferences:{musica:3},profile:{}};
+    assert.deepEqual(ids(selectBulletin(articles,opts)), ['album','spain','uk']);
+    assert.deepEqual(ids(selectBulletin(articles,{...opts,profile:{musicEventRegion:'spain'}})), ['album','spain']);
+    assert.deepEqual(ids(selectBulletin(articles,{...opts,profile:{musicEventRegion:'world'}})), ['album','australia','spain','uk']);
+  }
+});
+
+test('Old profiles adopt Europe for visits and retain the separate Spain-only event mode', () => {
+  for (const value of [undefined,null,'invalid',{},true]) assert.equal(normalizeProfile({musicEventRegion:value}).musicEventRegion,'europe');
+  for (const region of ['spain','europe','world']) assert.equal(normalizeProfile({musicEventRegion:region}).musicEventRegion,region);
+  assert.equal(normalizeProfile({musicSpainOnly:true}).musicSpainOnly,true);
 });
 test('Music genres and Spanish event mode intersect, and can return no matches', () => {
   const articles = [music('rock-spain', 'Pearl Jam concierto en Madrid'), music('rock-london', 'Pearl Jam concierto en Londres'), music('rock-album', 'Pearl Jam nuevo disco'), music('pop-spain', 'Taylor Swift concierto en Madrid')];
@@ -68,7 +115,7 @@ test('Config advertises all six music genres', async () => {
 test('Published API contract applies both filters to personal editions without a voice provider', async () => {
   const original = globalThis.fetch;
   const date = new Date(Date.now() - 3600000).toUTCString();
-  const entries = [['local', 'Pearl Jam anuncia concierto en Madrid'], ['world', 'Pearl Jam anuncia concierto en Londres'], ['pop', 'Taylor Swift anuncia concierto en Madrid']];
+  const entries = [['local', 'Pearl Jam anuncia concierto en Madrid'], ['world', 'Pearl Jam anuncia concierto en Londres'], ['pop', 'Taylor Swift anuncia concierto en Madrid'], ['australia', 'Pearl Jam anuncia concierto en Melbourne'], ['album', 'Pearl Jam nuevo disco']];
   globalThis.fetch = async url => new Response(`<rss><channel>${String(url).includes('nme.com') ? entries.map(([id, title]) => `<item><title>${title}</title><link>https://www.nme.com/news/music/${id}</link><pubDate>${date}</pubDate></item>`).join('') : ''}</channel></rss>`);
   try {
     const make = profile => api(new Request('https://brujula.test/api/edition', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scope: 'personal', hours: 12, length: 'short', preferences: { musica: 3 }, profile, audio: true }) }), {});
@@ -79,6 +126,10 @@ test('Published API contract applies both filters to personal editions without a
     assert.equal(edition.audio, undefined);
     assert.equal(edition.articles.length, 1);
     assert.equal(edition.articles[0].title, entries[0][1]);
+    const europe = await (await make({musicGenres:['grunge']})).json();
+    assert.ok(europe.articles.some(a => a.title === entries[1][1]));
+    assert.ok(europe.articles.some(a => a.title === entries[4][1]));
+    assert.ok(!europe.articles.some(a => a.title === entries[3][1]));
     assert.equal((await make({ musicGenres: ['punk'], musicSpainOnly: true })).status, 422);
   } finally { globalThis.fetch = original; }
 });

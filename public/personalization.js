@@ -1,5 +1,5 @@
 import { normalizeFeedback, isHiddenArticle } from './news-feedback.js';
-import { classifyMusic, musicGenres } from './music-filters.js';
+import { classifyMusic, musicGenres, musicEventAllowed } from './music-filters.js';
 export { musicGenres };
 const topic = (id, name, words) => ({ id, name, words: words.split('|') });
 export const categories = [
@@ -189,6 +189,7 @@ export function normalizeProfile(input = {}) {
     topicMode: input.topicMode === 'strict' ? 'strict' : 'priority',
     musicGenres: Array.isArray(input.musicGenres) ? [...new Set(input.musicGenres.filter(id => musicGenres.some(g => g.id === id)))] : [],
     musicSpainOnly: input.musicSpainOnly === true,
+    musicEventRegion: ['spain', 'europe', 'world'].includes(input.musicEventRegion) ? input.musicEventRegion : 'europe',
     includeAnniversaries: input.includeAnniversaries !== false,
     anniversaryEra: input.anniversaryEra === '80s' ? '80s' : 'all',
     anniversaryKind: ['events', 'births', 'deaths'].includes(input.anniversaryKind) ? input.anniversaryKind : 'all',
@@ -205,7 +206,7 @@ export function personalize(articles, preferences, limit = 30, profileInput = {}
   const candidates = [];
   for (const a of articles) {
     const hours = (now - +new Date(a.publishedAt)) / 3600000;
-    if (!Number.isFinite(hours) || hours < -5 / 60 || hours > profile.hours || profile.excludedSources.includes(a.source) || hiddenByFeedback(a, profile)) continue;
+    if (!Number.isFinite(hours) || hours < -5 / 60 || hours > profile.hours || profile.excludedSources.includes(a.source) || hiddenByFeedback(a, profile) || !musicEventAllowed(a, profile.musicEventRegion)) continue;
     const cats = [...new Set([a.category, ...(a.categories || [])])].filter(id => p[id] > 0);
     if (!cats.length) continue;
     const isMusic = a.category === 'musica' || a.categories?.includes('musica') || a.musicGenres?.length;
