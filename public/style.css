@@ -129,7 +129,7 @@ body.is-playing .eq i{animation:eq 1s ease-in-out infinite}body.is-playing .eq i
 .skeleton{background:linear-gradient(110deg,var(--surface) 8%,var(--surface-2) 18%,var(--surface) 33%);background-size:200% 100%;animation:shimmer 1.5s linear infinite;height:250px;border-radius:var(--radius)}@keyframes shimmer{to{background-position-x:-200%}}
 
 /* ── Edition (track list) ───────────────────────────────── */
-.voice-settings{background:var(--surface);border-radius:var(--radius);margin:0 0 18px}
+.voice-settings{background:var(--surface);border-radius:var(--radius);margin:0 0 18px;scroll-margin-top:88px}
 .voice-settings summary{cursor:pointer;padding:16px 18px;font-size:15px;font-weight:700;list-style:none}.voice-settings summary::-webkit-details-marker{display:none}.voice-settings summary span{font-size:13px;color:var(--muted);margin-left:10px;font-weight:500}
 .voice-settings-body{padding:0 18px 18px}.voice-settings-body>p{font-size:14px;color:var(--muted)}.voice-settings-body label{font-size:13px;display:flex;flex-direction:column;gap:8px;font-weight:600}.voice-settings-body select{width:100%;text-overflow:ellipsis}
 .voice-mode{max-width:420px;margin:16px 0}.voice-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.voice-grid>div{min-width:0}.voice-grid button{margin-top:10px;width:100%}.voice-settings-body>small{display:block;color:var(--muted);font-size:12px;line-height:1.7;margin-top:12px}

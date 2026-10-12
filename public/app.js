@@ -480,7 +480,14 @@ $('#player-music').onclick = () => {
 $('#music-volume').oninput = e => { music.setVolume(e.target.value); saveLocal('brujula-music', { enabled: music.enabled, volume: music.volume, revision: MUSIC_REVISION }); updateMusicControls(); };
 $('#player-close').onclick = closeSpeech;
 $('#player-feedback').onclick = () => { const paragraph = playerEdition?.paragraphs[activePlayer?.index]; if (paragraph) openFeedback(paragraph.sourceIds[0]); };
-$('#player-voices').onclick = () => { navigate('edition'); $('#voice-settings').open = true; $('#voice-settings').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+$('#player-voices').onclick = () => {
+  setPlayerExpanded(false);
+  navigate('edition');
+  const settings = $('#voice-settings');
+  settings.open = true;
+  settings.querySelector('summary').focus({ preventScroll: true });
+  settings.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
 document.addEventListener('click', e => { const b = e.target.closest('[data-listen-story]'); if (b) startSpeech(Number(b.dataset.listenStory)); });
 // Neural audio is a real <audio> element and should survive the page being backgrounded.
 window.addEventListener('pagehide', () => { if (activePlayer !== clipPlayer) closeSpeech(); });
