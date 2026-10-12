@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { api } from './handler.js';
 
 const root = fileURLToPath(new URL('../public/', import.meta.url));
-const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml' };
+const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.mp3': 'audio/mpeg' };
 http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://' + req.headers.host);
