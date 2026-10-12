@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { figuresSupported, vetParagraphs, broadcastFrame, writeBroadcast, buildClips, geminiModels } from '../server/broadcast.js';
 import { signClip, verifyClip, voiceFor, splitText, ssml, synthesizeSpeech, VOICES } from '../server/tts.js';
+import { cachePut, cachePutJSON, sha256Hex } from '../server/cache.js';
 
 const articles = [
   { id: 'a', title: 'El Gobierno aprueba 300 millones para vivienda', excerpt: 'El Consejo de Ministros ha aprobado el plan este martes.', sourceName: 'EL PAÍS', category: 'economia' },
@@ -50,6 +51,29 @@ test('Speech is requested per chunk, concatenated, cached and fails loudly', asy
   await assert.rejects(synthesizeSpeech('Texto distinto ' + Math.random(), VOICES.male, env, async () => new Response('no', { status: 401 })), /tts-401/);
 });
 
+test('Radio cadence preserves punctuation and escapes text and voice attributes for both narrators', () => {
+  const text = 'Según el medio, creció un 3,5%. EE. UU. publica el dato. Tom & Jerry <break time="9s"/>.';
+  for (const voice of Object.values(VOICES)) {
+    const markup = ssml(text, voice);
+    assert.match(markup, /<prosody rate='\+4%'>/);
+    assert.match(markup, /type='Sentenceboundary-exact' value='240ms'/);
+    assert.match(markup, /creció un 3,5%\. EE\. UU\. publica el dato\./);
+    assert.match(markup, /Tom &amp; Jerry &lt;break time=&quot;9s&quot;\/&gt;/);
+    assert.doesNotMatch(markup, /express-as|pitch=/);
+  }
+  assert.match(ssml('Hola', "voz' fake='value"), /name='voz&apos; fake=&apos;value'/);
+});
+
+test('A cadence update replaces old neutral cached audio and caches the new rendering', async () => {
+  const text = 'Noticia de prueba para renovar la locución ' + Math.random();
+  await cachePut('tts/' + await sha256Hex(VOICES.female + '\n' + text), new Uint8Array([1]).buffer, 3600);
+  let requests = 0;
+  const fetcher = async () => { requests++; return new Response(new Uint8Array([2, 3])); };
+  assert.deepEqual([...await synthesizeSpeech(text, VOICES.female, env, fetcher)], [2, 3]);
+  assert.deepEqual([...await synthesizeSpeech(text, VOICES.female, env, fetcher)], [2, 3]);
+  assert.equal(requests, 1);
+});
+
 test('Figures written by the model must come from the cited sources', () => {
   assert.equal(figuresSupported({ text: 'El Gobierno destina 300 millones.', sourceIds: ['a'] }, articles), true);
   assert.equal(figuresSupported({ text: 'El Gobierno destina 500 millones.', sourceIds: ['a'] }, articles), false);
@@ -79,10 +103,14 @@ test('Gemini script is parsed, vetted and cached; failures fall back to the exce
     assert.match(url, /^https:\/\/gemini\.test\/v1beta\/models\/gemini-3\.5-flash-lite:generateContent$/);
     assert.equal(init.headers['x-goog-api-key'], 'g-key');
     assert.match(JSON.parse(init.body).systemInstruction.parts[0].text, /EXCLUSIVAMENTE/);
+    assert.match(JSON.parse(init.body).systemInstruction.parts[0].text, /Alterna frases cortas/);
+    assert.match(JSON.parse(init.body).systemInstruction.parts[0].text, /transiciones breves solo cuando/);
     const items = [{ text: 'En economía, el Gobierno aprueba 300 millones para vivienda, según EL PAÍS.', sourceIds: ['a'] }, { text: 'Y en deporte, Alonso saldrá desde el pitlane, según Europa Press.', sourceIds: ['b'] }];
     return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ items }) }] } }] }));
   };
   const unique = articles.map(a => ({ ...a, id: a.id, title: a.title + ' ' + Math.random() }));
+  const oldKey = 'script/' + await sha256Hex(JSON.stringify([unique.map(a => [a.id, a.title, a.excerpt]), 'medium', 'gemini']));
+  await cachePutJSON(oldKey, { mode: 'ai', paragraphs: [{ text: 'Guion neutro anterior.', sourceIds: ['a'] }] }, 1800);
   const first = await writeBroadcast(unique, geminiEnv, { length: 'medium' }, ok);
   assert.equal(first.mode, 'ai'); assert.equal(first.paragraphs.length, 2);
   await writeBroadcast(unique, geminiEnv, { length: 'medium' }, ok);

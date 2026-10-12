@@ -56,6 +56,8 @@ La IA usa AI SDK y Vercel AI Gateway. Recibe solo los titulares y extractos sele
 
 «Escuchar ahora» puede locutar un informativo redactado para radio en lugar de leer titulares con la voz del dispositivo. Es opcional y se activa con dos credenciales gratuitas; sin ellas la app sigue funcionando como antes.
 
+El guion alterna frases cortas y medias, integra tema y titular y usa transiciones cuando ayudan, evitando fórmulas repetidas y dramatismo. Elvira y Álvaro conservan su tono natural con una cadencia un 4 % más ágil y pausas entre frases de 240 ms mediante SSML, sin cambiar el tono ni usar estilos no compatibles. La velocidad del reproductor se aplica sobre esa cadencia. La caché identifica el guion por su prompt y el audio por su SSML, para no reutilizar versiones de una locución anterior. La música y el fallback del dispositivo se conservan.
+
 ```text
 # Voz: Azure Speech (capa gratuita de ~500.000 caracteres al mes; un informativo de 10 minutos usa ~9.000)
 AZURE_SPEECH_KEY=<secreto>

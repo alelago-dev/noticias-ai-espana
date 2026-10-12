@@ -37,7 +37,12 @@ export function voiceFor(index, mode) {
 
 const xmlEscape = text => text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]);
 export function ssml(text, voice) {
-  return `<speak version='1.0' xml:lang='es-ES' xmlns='http://www.w3.org/2001/10/synthesis'><voice name='${voice}'>${xmlEscape(text)}</voice></speak>`;
+  // A modestly brisk radio cadence, without changing either narrator's pitch.
+  // Absolute sentence pauses avoid stacking silence on Azure's default pauses.
+  // Let the neural voice interpret punctuation: splitting on dots would damage
+  // decimals, abbreviations and names. These tags work with both es-ES voices;
+  // express-as styles such as "newscast" are not supported by every voice.
+  return `<speak version='1.0' xml:lang='es-ES' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='http://www.w3.org/2001/mstts'><voice name='${xmlEscape(voice)}'><mstts:silence type='Sentenceboundary-exact' value='240ms'/><prosody rate='+4%'>${xmlEscape(text)}</prosody></voice></speak>`;
 }
 
 /** Splits at sentence ends so each request stays well below the service limits. */
@@ -72,7 +77,8 @@ async function speak(chunk, voice, env, fetcher) {
 
 /** @returns {Promise<Uint8Array>} MP3 bytes (constant bitrate, so chunks can simply be concatenated). */
 export async function synthesizeSpeech(text, voice, env, fetcher = fetch) {
-  const key = 'tts/' + await sha256Hex(voice + '\n' + text);
+  // Cache the actual rendering, so a cadence change never reuses old audio.
+  const key = 'tts/' + await sha256Hex(ssml(text, voice));
   const cached = await cacheGet(key);
   if (cached) return new Uint8Array(cached);
   const parts = [];
